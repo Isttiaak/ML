@@ -1,0 +1,515 @@
+{
+ "params": {
+  "Vin": 24.0,
+  "Vref": 48.0,
+  "L": 0.0005,
+  "C": 0.00047,
+  "R0": 20.0,
+  "R1": 10.0,
+  "fs": 20000.0,
+  "Ts": 5e-05,
+  "T_end": 0.1,
+  "t_step": 0.05,
+  "N": 2000,
+  "D_ss": 0.5,
+  "DMIN": 0.05,
+  "DMAX": 0.9,
+  "KPV": 0.15,
+  "KIV": 12.0,
+  "IL_MAX": 12.0
+ },
+ "gains_baseline": {
+  "fcsmpc": [
+   0.5
+  ],
+  "cascade_pi": [
+   0.03,
+   20.0
+  ],
+  "cascade_pid": [
+   0.033,
+   22.0,
+   8e-06,
+   0.0001
+  ],
+  "smc": [
+   0.4,
+   0.5
+  ],
+  "single_pi": [
+   0.05,
+   5.0
+  ]
+ },
+ "gains_mopso_python": {
+  "fcsmpc": [
+   1.4807321719044355
+  ],
+  "cascade_pi": [
+   0.05305838076235907,
+   1.0
+  ],
+  "cascade_pid": [
+   0.050400090500831156,
+   1.0,
+   1e-07,
+   0.0003699223321510474
+  ],
+  "smc": [
+   0.3240948351176556,
+   2.0
+  ],
+  "single_pi": [
+   0.1052718548360313,
+   30.0
+  ]
+ },
+ "metrics": {
+  "base": {
+   "fcsmpc": {
+    "Settling (ms)": 50.0,
+    "Overshoot (%)": 10.0322,
+    "SS Error (V)": 1.4191,
+    "Ripple (V)": 1.72,
+    "Load Reg. (V)": 1.4799
+   },
+   "cascade_pi": {
+    "Settling (ms)": 26.35,
+    "Overshoot (%)": 2.1714,
+    "SS Error (V)": 0.4981,
+    "Ripple (V)": 0.198,
+    "Load Reg. (V)": 1.4172
+   },
+   "cascade_pid": {
+    "Settling (ms)": 45.2,
+    "Overshoot (%)": 4.1168,
+    "SS Error (V)": 0.9741,
+    "Ripple (V)": 0.3817,
+    "Load Reg. (V)": 0.7925
+   },
+   "smc": {
+    "Settling (ms)": 48.95,
+    "Overshoot (%)": 5.0981,
+    "SS Error (V)": 0.9549,
+    "Ripple (V)": 0.4874,
+    "Load Reg. (V)": 0.9353
+   },
+   "single_pi": {
+    "Settling (ms)": 50.0,
+    "Overshoot (%)": 83.5747,
+    "SS Error (V)": 18.7415,
+    "Ripple (V)": 29.7509,
+    "Load Reg. (V)": 57.0746
+   }
+  },
+  "opt": {
+   "fcsmpc": {
+    "Settling (ms)": 49.25,
+    "Overshoot (%)": 10.8,
+    "SS Error (V)": 1.3114,
+    "Ripple (V)": 1.457,
+    "Load Reg. (V)": 0.8007
+   },
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.4995,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 1.207
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.5527,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 1.2119
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 0.9489
+   },
+   "single_pi": {
+    "Settling (ms)": 50.0,
+    "Overshoot (%)": 85.2284,
+    "SS Error (V)": 13.8475,
+    "Ripple (V)": 17.63,
+    "Load Reg. (V)": 43.758
+   }
+  }
+ },
+ "robustness_metrics": {
+  "load_m25": {
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.4995,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 0.38
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.5527,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 0.3081
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 0.3047
+   }
+  },
+  "load_m50": {
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.4995,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 1.207
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.5527,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 1.2119
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 0.9489
+   }
+  },
+  "load_m75": {
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.4995,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 8.3894
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.5527,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 8.2004
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 8.9086
+   }
+  },
+  "load_ramp": {
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.4995,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 0.3496
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.5527,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 0.2897
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 0.3047
+   }
+  },
+  "vin_p20": {
+   "cascade_pi": {
+    "Settling (ms)": 7.25,
+    "Overshoot (%)": 0.6902,
+    "SS Error (V)": 0.1742,
+    "Ripple (V)": 0.1402,
+    "Load Reg. (V)": 3.4419
+   },
+   "cascade_pid": {
+    "Settling (ms)": 4.45,
+    "Overshoot (%)": 0.6311,
+    "SS Error (V)": 0.2348,
+    "Ripple (V)": 0.0664,
+    "Load Reg. (V)": 3.495
+   },
+   "smc": {
+    "Settling (ms)": 4.5,
+    "Overshoot (%)": 1.8969,
+    "SS Error (V)": 0.358,
+    "Ripple (V)": 0.1113,
+    "Load Reg. (V)": 1.6007
+   }
+  }
+ },
+ "sense_quantisation_cases": [
+  {
+   "x": -1.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 0.0
+  },
+  {
+   "x": -1.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 0.0
+  },
+  {
+   "x": -1.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 0.0
+  },
+  {
+   "x": -1.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 0.0
+  },
+  {
+   "x": 0.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 0.0
+  },
+  {
+   "x": 0.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 0.0
+  },
+  {
+   "x": 0.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 0.0
+  },
+  {
+   "x": 0.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 0.0
+  },
+  {
+   "x": 3.3333,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 3.3313782991202343
+  },
+  {
+   "x": 3.3333,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 3.343108504398827
+  },
+  {
+   "x": 3.3333,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 3.331868131868132
+  },
+  {
+   "x": 3.3333,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 3.3260073260073257
+  },
+  {
+   "x": 11.99,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 11.988269794721408
+  },
+  {
+   "x": 11.99,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 11.964809384164223
+  },
+  {
+   "x": 11.99,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 11.991208791208791
+  },
+  {
+   "x": 11.99,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 11.985347985347985
+  },
+  {
+   "x": 12.5,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 12.5,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 12.492668621700881
+  },
+  {
+   "x": 12.5,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 12.5,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 12.498168498168498
+  },
+  {
+   "x": 47.97,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 47.97,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 47.976539589442815
+  },
+  {
+   "x": 47.97,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 47.97,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 47.97069597069597
+  },
+  {
+   "x": 48.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 48.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 47.976539589442815
+  },
+  {
+   "x": 48.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 48.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 48.0
+  },
+  {
+   "x": 59.99,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 59.99,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 60.0
+  },
+  {
+   "x": 59.99,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 59.99,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 59.985347985347985
+  },
+  {
+   "x": 61.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 61.0,
+   "bits": 10,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 60.0
+  },
+  {
+   "x": 61.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 12.0,
+   "y": 12.0
+  },
+  {
+   "x": 61.0,
+   "bits": 12,
+   "lo": 0.0,
+   "hi": 60.0,
+   "y": 60.0
+  }
+ ],
+ "notes": "Generated from MOPSO_Boost_Converter_Colab.ipynb (exact rerun reproduced saved outputs). Noise scenario omitted: numpy RNG stream cannot be reproduced in MATLAB."
+}
