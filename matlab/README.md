@@ -1,0 +1,512 @@
+# MOPSO boost-converter study in MATLAB/Simulink: step by step
+
+This folder moves the Colab notebook (`MOPSO_Boost_Converter_Colab.ipynb`) to MATLAB/Simulink. It fixes the problems found in the code review, and it takes you to a real switching model in Simscape Electrical.
+
+Read these three points first. They decide how you spend your time.
+
+1. **Rebuilding the averaged model in Simulink changes nothing in the results.** The Python plant is a forward-Euler averaged model at 20 kHz. In Simulink it gives the same numbers, flaws included. That stage only proves your wiring is correct.
+2. **The real gains are the corrected method and a switching plant.**
+   - Corrected method: measured feed-forward instead of the true load, post-event metrics, feasible load steps, an outer loop that actually gets tuned, multi-seed MOPSO.
+   - Switching plant: something that can genuinely show ripple, DCM and parasitics.
+3. **Know what was tested.**
+   - Every `.m` file here was run in GNU Octave 8.4 and checked against your Python results: `run_all_tests` gives 7 test files, all PASS.
+   - FCS-MPC, cascade PI, cascade PID and single-loop PI match Python bit-for-bit. SMC matches to about 1e-14, because numpy uses a different `tanh`.
+   - **The Simulink-only scripts have not run on real MATLAB.** That's `build_boost_models`, `sim_boost_simulink` (Simulink path), `check_simulink_models` (Simulink path), `check_simscape_block_params` and the Simulink half of `simscape_compare_openloop`. No licence was available. They were checked against a mock of the documented APIs, so the wiring logic is right, but expect the odd API detail to need a fix.
+   - Simscape block labels below come from MathWorks documentation. Confirm them on your install with `check_simscape_block_params`.
+
+---
+
+## 0. What you need
+
+| Stage | Products |
+|---|---|
+| 1–3 (scripts, Simulink models, MOPSO) | MATLAB + Simulink, R2023b or newer |
+| 4b (Simscape circuit) | + Simscape + Simscape Electrical |
+| Faster batches (optional) | Parallel Computing Toolbox (`parsim`) |
+| Cross-check of MOPSO (optional) | Global Optimization Toolbox (`paretosearch`) |
+
+Don't build anything on Specialized Power Systems blocks: `powergui`, *PWM Generator (DC-DC)*, the SPS *Boost Converter*. MathWorks marks them "to be removed", starting with R2026a.
+
+## 1. The stages
+
+```
+Stage 1   MATLAB scripts reproduce the Python numbers          minutes
+Stage 2   Simulink model boost_avg reproduces Stage 1           1 command, or ~1 h by hand
+Stage 3   MOPSO tuning with the corrected method                 minutes (MATLAB), ~20 min (Octave)
+Stage 4a  boost_cycle: exact switching plant, no Simscape        1 command
+Stage 4b  Simscape Electrical circuit                            half a day
+Stage 5   Robustness battery, LaTeX table, figures               minutes
+```
+
+Each stage has a check. Don't move on while it fails.
+
+## 2. Get the code running
+
+```matlab
+cd path/to/ML/matlab
+addpath(pwd); addpath(fullfile(pwd,'tests'));
+r = run_all_tests();          % 7 test files; ~4.6 min in Octave, faster in MATLAB
+```
+
+Everything should PASS. `run_all_tests` prints SKIP for anything needing a toolbox you don't have.
+
+## 3. Stage 1: reproduce the Python results in MATLAB
+
+```matlab
+P   = boost_params();
+out = sim_boost('cascade_pi', [0.0530583 1.0], P);   % the notebook's MOPSO gains
+m   = metrics_legacy(out.Vo, P)
+```
+
+The result should be settling 7.25 ms, overshoot 0.4995 %, "SS error" 0.1742 V, "ripple" 0.1402 V, load reg 1.2070 V, i.e. the notebook's "After" row. `test_core_equivalence` checks every controller, both gain sets and the five noise-free robustness scenarios against the Python traces stored in `tests/ref/`.
+
+`sim_boost` keeps the notebook behaviour as its default and offers every fix as an option:
+
+| Option | Legacy default | Use for the paper |
+|---|---|---|
+| `ff_mode` | `'oracle'`: feed-forward uses the true R and Vin | `'measured'`: output-current and Vin sensors |
+| `delay` | 0 | 1 (one-sample DSP delay) |
+| `plant` | `'avg'` (Euler, no ripple) | `'switched'` (exact PWM periods, parasitics, DCM) |
+| `pwm` | `'trailing'` | `'center'`: sampling at the carrier valley gives the average current |
+| sensors | ideal | `noise_std_v/_i/_io/_vin`, `adc_bits`, `seed` |
+| outer loop | fixed KPV 0.15, KIV 12 | `KPV`, `KIV` (MOPSO tunes them) |
+| plant mismatch | none | `Pplant` (L, C, rL, rC, Ron, VF) |
+
+Why `pwm = 'center'` matters: with trailing-edge PWM the sample at the start of each period is the ripple *valley*. The inner loop then sees iL 0.6 A low, and the output settles 61 mV below 48 V. Centre-aligned sampling removes that bias: 0.0002 A, +2.7 mV. `test_centre_pwm` checks it.
+
+---
+
+## 4. Stage 2: the Simulink model `boost_avg`
+
+### 4.1 How it is put together
+
+```
+       +---------+  R, Vin                             (all blocks run at Ts)
+  +--->| Scenario|---------------+-------------------------------+
+  |    +---------+               |                               |
+  |      | k_next                v                               v
+  +-[k]--+       Vo, iL   +-------------+   io = Vo/R    +---------------+
+                 +--------| xpDemux     |---> truth ---->|  Controller   |---> d ---+
+                 |        +-------------+   [Vo;iL;io;   | blk_controller|          |
+               [xp]  <----------+             Vin;R]     +---------------+          |
+           Unit Delay           |          noise (In1) ------^     |  ^             |
+           IC XP0           +--------+                   xc_next   |  |             |
+                            | Plant  |<----------------------------|--|-------------+
+                            | Euler  |                         [xc]+--+
+                            +--------+                     Unit Delay, IC X0
+```
+
+The three Unit Delays (`k`, `xp`, `xc`) hold every state: sample counter, plant, controller. That gives three things for free:
+- no algebraic loop;
+- a clean reset every run, Fast Restart included;
+- Python's exact update order: the controller sees `x[k]`, the plant computes `x[k+1]`.
+
+Time comes from the counter (`t = k*Ts`), not the Simulink clock, so the load step lands on the same sample as in Python. The controller block calls `blk_controller.m`, which calls the same `ctrl_*.m` files Stage 1 tested. One copy of each control law, so the scripts and the model can't drift apart.
+
+All five controllers live in one model. You switch between them by changing the parameter vector `CP`, with no rewiring. Gains, feed-forward mode, delay and ADC bits are all inside `CP`.
+
+### 4.2 Quick route
+
+```matlab
+build_boost_models('avg');        % writes boost_avg.slx (and 'cycle' / 'both')
+R = check_simulink_models();      % Simulink vs sim_boost vs the Python traces
+```
+
+The builder prints `MANUAL STEP:` lines for anything it couldn't set programmatically on your release. If it errors outright, use 4.3: you'll get the same model, and you'll understand it better.
+
+### 4.3 By hand
+
+**Step 0.** Put the `matlab` folder on the path (`addpath`). The MATLAB Function blocks call `blk_*.m`, `ctrl_*.m`, `sense_adc.m`, `round_half_even.m`, `plant_avg_step.m` and `sw_boost_period.m`. Simulink compiles them, so the first update takes a while.
+
+**Step 1.** Simulink Start Page → Blank Model. Save it as `boost_avg.slx` in that folder. **Use the block names below exactly**, because `sim_boost_simulink` and the checks look them up.
+
+**Step 2. Blocks.**
+
+| Name | Library path | Parameters |
+|---|---|---|
+| `k` | Simulink > Discrete > Unit Delay | Initial condition `0`, Sample time `Ts` |
+| `xp` | Simulink > Discrete > Unit Delay | Initial condition `XP0`, Sample time `Ts` |
+| `xc` | Simulink > Discrete > Unit Delay | Initial condition `X0`, Sample time `Ts` |
+| `xpDemux` | Simulink > Signal Routing > Demux | Number of outputs `2` (1 = iL, 2 = Vo) |
+| `io` | Simulink > Math Operations > Divide | default (×, ÷): in1 = Vo, in2 = R |
+| `truth` | Simulink > Signal Routing > Mux | Number of inputs `5`, order Vo, iL, io, Vin, R |
+| `noise` | Simulink > Sources > In1 | Port dimensions `4`, Sample time `Ts` |
+| `ylogMux` | Simulink > Signal Routing > Mux | Number of inputs `6`, order Vo, iL, d, IL_ref, R, Vin |
+| `ylog` | Simulink > Sinks > To Workspace | Variable name `ylog`, Save format **Array**, Sample time `Ts` |
+| `ymeas` | Simulink > Sinks > To Workspace | Variable name `ymeas`, Save format **Array**, Sample time `Ts` |
+| `Scenario`, `Controller`, `Plant` | Simulink > User-Defined Functions > MATLAB Function | code below |
+
+**Step 3. Code.** Open each MATLAB Function block, delete the template, and paste the code. The wrapper name must differ from the `blk_` function, or it calls itself.
+
+`Scenario`:
+```matlab
+function [R, Vin, k_next] = scen(k, LP, VP, Ts)
+[R, Vin, k_next] = blk_scenario(k, LP, VP, Ts);
+end
+```
+`Controller`:
+```matlab
+function [d, IL_ref, xc_next, meas] = ctrl(truth, noise, xc, CP)
+[d, IL_ref, xc_next, meas] = blk_controller(truth, noise, xc, CP);
+end
+```
+`Plant`:
+```matlab
+function xp_next = plant(xp, d, R, Vin, PP)
+xp_next = blk_plant_avg(xp, d, R, Vin, PP);
+end
+```
+
+**Step 4. Block data.** Use the Symbols pane (Function tab → Edit Data) or Model Explorer (Ctrl+H):
+
+| Block | Set Scope = **Parameter** (Tunable on) | Fix the size of the Unit Delay input |
+|---|---|---|
+| Scenario | `LP`, `VP`, `Ts` | `k`: Size 1, double |
+| Controller | `CP` | `xc`: Size `[8 1]`, double |
+| Plant | `PP` | `xp`: Size `[2 1]`, double |
+
+Then, with each function selected, open the Property Inspector and set **Update method = Discrete, Sample time = Ts**.
+
+The Parameter scope makes the block read the model-workspace variable of the same name instead of adding a port. After that the ports are numbered in signature order:
+- Scenario: in 1 = k; out 1 = R, 2 = Vin, 3 = k_next.
+- Controller: in 1 = truth, 2 = noise, 3 = xc; out 1 = d, 2 = IL_ref, 3 = xc_next, 4 = meas.
+- Plant: in 1 = xp, 2 = d, 3 = R, 4 = Vin; out 1 = xp_next.
+
+**Step 5. Wiring** (source/port → destination/port; draw branches for repeated sources):
+
+| From | To |
+|---|---|
+| `k/1` | `Scenario/1` |
+| `Scenario/3` (k_next) | `k/1` |
+| `xp/1` | `xpDemux/1` and `Plant/1` |
+| `Plant/1` | `xp/1` |
+| `xpDemux/2` (Vo) | `io/1`, `truth/1`, `ylogMux/1` |
+| `xpDemux/1` (iL) | `truth/2`, `ylogMux/2` |
+| `Scenario/1` (R) | `io/2`, `truth/5`, `Plant/3`, `ylogMux/5` |
+| `Scenario/2` (Vin) | `truth/4`, `Plant/4`, `ylogMux/6` |
+| `io/1` | `truth/3` |
+| `truth/1` | `Controller/1` |
+| `noise/1` | `Controller/2` |
+| `xc/1` | `Controller/3` |
+| `Controller/3` (xc_next) | `xc/1` |
+| `Controller/1` (d) | `Plant/2`, `ylogMux/3` |
+| `Controller/2` (IL_ref) | `ylogMux/4` |
+| `Controller/4` (meas) | `ymeas/1` |
+| `ylogMux/1` | `ylog/1` |
+
+**Step 6. Variables.** With the model open, run:
+```matlab
+P = boost_params();
+S = setup_boost_workspace('boost_avg', 'cascade_pi', [], P, struct());
+```
+This writes `CP` (1×32), `X0` (8×1), `LP`, `VP` (1×7), `PP` (1×10), `XP0` = [0; 24], `Ts` and `N` into the **model** workspace. Don't also define them in the base workspace; the model workspace wins anyway, and two copies lead to confusion. `setup_boost_workspace` takes the same options as `sim_boost`, e.g. `struct('ff_mode','measured','delay',1)`.
+
+**Step 7. Model Settings** (Ctrl+E):
+
+| Pane | Setting | Value |
+|---|---|---|
+| Solver | Start / Stop time | `0` / `(N-1)*Ts` |
+| Solver | Type, Solver | Fixed-step, discrete (no continuous states) |
+| Solver | Fixed-step size | `Ts` |
+| Solver details | Treat each discrete rate as a separate task | off |
+| Diagnostics → Solver | Algebraic loop | error |
+| Data Import/Export | Single simulation output | on |
+
+Use a stop time of `(N-1)*Ts`, not 0.1. A run to 0.1 s logs 2001 samples, but Python stores 2000.
+
+**Step 8. Run and check.**
+- Ctrl+D should give no errors. Then Run.
+- `out.ylog` is 2000×6 with columns [Vo iL d IL_ref R Vin]. `out.ymeas` may come back as 4×1×2000; `squeeze` it.
+- Then run `check_simulink_models`. It compares:
+  - all 5 controllers against `sim_boost` and the Python traces;
+  - two runs under Fast Restart, to prove the states reset;
+  - a batch with measured feed-forward, delay, a 10-bit ADC and noise.
+- Expect bit-exact results for `boost_avg`. Compiled C can differ in the last digit for SMC's `tanh`, and the tolerance is 1e-9.
+
+If check (d), the noise one, fails while (a) passes: Simulink isn't reading the external input at exactly `k*Ts`. Replace the `noise` Inport with a MATLAB Function `n = blk_noise_lookup(k, NZ)`, fed by the same `k` signal, with `NZ` as a Parameter.
+
+**Pressing Run gives noise-free runs.** The root Inport outputs zeros when no external input is set. Noise reaches the model through `sim_boost_simulink`, which calls `setExternalInput` with exactly the same random draws as `sim_boost`.
+
+### 4.4 If you'd rather use Simulink's own PID blocks
+
+That works, but to reproduce the Python laws you must change several defaults:
+
+| Discrete PID Controller | Needed to match Python | Default (gives different numbers) |
+|---|---|---|
+| Form / Integrator method | Parallel / Forward Euler | same |
+| Integrator initial condition | `D_ss` (inner loops), 0 (outer) | 0 |
+| Limit output | on, [0.05 0.90] (inner). Outer: external limits `up = IL_MAX - IL_ff`, `lo = -IL_ff`, then add IL_ff after the block | off |
+| Anti-windup | back-calculation, **Kb = 1/Ts** (20000) | none, Kb = 1 |
+| Derivative filter method (PID) | **Backward Euler, N = 1/Tf** | Forward Euler, N = 100 |
+
+The filter is the trap. The Python `alpha*d_filt + (1-alpha)*(e-e_prev)/Ts` is the block's *Backward Euler* filter. The default Forward Euler filter is a different filter and goes unstable for `Tf < Ts/2`, which MOPSO can reach. Clamping anti-windup doesn't match either.
+
+---
+
+## 5. Stage 3: MOPSO with the corrected method
+
+```matlab
+cfg = study_config('scenario_set','worst_case', 'out_file','mopso_wc.mat');
+res = run_mopso_study(cfg);       % 5 controllers x 5 seeds x 20 particles x 30 iterations
+```
+
+Runtime: about 19 min in Octave; MATLAB's JIT should make it several times faster (not measured). For a quick look, `study_config()` tunes on the nominal step only, which takes about 5 min in Octave. But read the over-fitting note below before you use those gains.
+
+What changed compared with the notebook:
+
+| Notebook | Now | Why |
+|---|---|---|
+| Objectives: startup settling, startup overshoot, mean \|e\| 40–50 ms, peak \|e\| 50–75 ms | startup settling, startup overshoot, **peak deviation after the event**, **recovery time after the event** (`metrics_event`); FCS-MPC also gets **switching frequency** | the 40–50 ms window measured a slow drift, and λsw exists to trade tracking against switching |
+| Oracle feed-forward, no delay | measured feed-forward (io, Vin sensors), 1-sample delay | a real controller doesn't know R |
+| Inner gains only | inner gains + KPV, KIV | the outer loop sets load regulation |
+| Linear bounds, optimum on the bound (Ki=1, Kd=1e-7, φ=2) | wide log-scale bounds, velocity reset at the walls, `bound_frac` and `bound_margin` reported | a front on the box edge isn't an optimum |
+| One seed | 5 seeds; hypervolume mean ± std with **one** normalisation per controller | PSO is random |
+| Compromise = distance to the origin | distance to the **ideal point**, min–max normalised | that's what the paper text claims |
+| One tuning scenario | `'worst_case'`: nominal, 20→8.9 Ω, start-up into 10 Ω, Vin −20 %, L −20 %; objectives = worst over them | see below |
+
+What the Octave runs showed (your MATLAB numbers will differ in detail, because the random streams differ):
+
+- **No compromise point sits on a bound any more**, except single-loop PI. Its best "design" on the ideal plant is the open-loop D_ss, so it collapses to the lower bound. That controller doesn't belong in the paper unless you redesign it.
+- **Tuning on the nominal step alone over-fits.** Cascade PI tuned that way picks Ki_i ≈ 0.05. On the switched plant those gains never settle when starting into 10 Ω, and they leave 3–3.6 V of error after ±20 % Vin steps. The worst-case set fixes this, and it's why the command above uses it.
+- **FCS-MPC can't meet a ±2 % band at 20 kHz.** With L = 500 µH each decision moves iL by 2.4 A, so most of its archive is penalised. That's a property of the controller at this sampling rate, not of the tuning. Say so in the paper, or raise its sampling rate.
+- **The corrected objectives don't penalise a small steady offset inside the band.** If that matters to you, add `'extra_objectives', {'event_iae_Vms'}`.
+
+Useful variations:
+```matlab
+cfg = study_config('legacy');                         % the notebook set-up, for the "before" column
+cfg = study_config('controllers',{'cascade_pi','smc'},'seeds',1:3);
+cfg = study_config('backend','simulink');             % objective evaluated in boost_avg via sim_boost_simulink
+```
+
+**Simulink as the simulator.** It gives the same objective values (Stage 2 proved the model equals `sim_boost`), but it's slower for a model this small. Use the MATLAB backend for tuning and Simulink/Simscape to validate the final gains. If you do use it: `cfg.simcfg.use_parsim = true` needs the Parallel Computing Toolbox, and every swarm is a single `SimulationInput` batch under Fast Restart.
+
+**Cross-check with a toolbox optimiser** (for the reviewer who asks why you wrote your own MOPSO). Search in log10 space where the study does:
+```matlab
+cfg = study_config();  S = drv_search_space('cascade_pi', cfg);  P = cfg.P;
+toU = @(Z) S.log_scale.*10.^Z + ~S.log_scale.*Z;            % search space -> gains
+lb = S.lb; ub = S.ub; lb(S.log_scale) = log10(lb(S.log_scale)); ub(S.log_scale) = log10(ub(S.log_scale));
+fun = @(Z) objective_boost(toU(Z), 'cascade_pi', P, cfg);
+opts = optimoptions('paretosearch','UseVectorized',true,'MaxFunctionEvaluations',3000,'ParetoSetSize',60);
+[zPS, fPS] = paretosearch(fun, numel(lb), [],[],[],[], lb, ub, [], opts);
+```
+Use `UseVectorized`, not `UseParallel`; MathWorks advises against the solvers' internal parfor with Simulink. Then compare `hypervolume_mc` on the same normalisation as `res.ctrl.cascade_pi.norm`.
+
+---
+
+## 6. Stage 4a: `boost_cycle`, an exact switching plant without Simscape
+
+`blk_plant_switched` solves the real circuit over each 50 µs period in closed form:
+- the ON and OFF topologies, exactly (matrix exponential);
+- the DCM idle state;
+- inductor DCR, capacitor ESR, switch Ron and diode drop;
+- trailing-edge or centre-aligned PWM.
+
+For each period it also returns min, max and average, which gives you the true switching ripple without a 0.1 µs solver step. It's cross-checked against an independent RK4 implementation at 1e-8 s to ~1e-11, and against the analytic ripple (1.200 A and 0.1277 V at d = 0.5, 20 Ω).
+
+```matlab
+build_boost_models('cycle');                                  % boost_cycle.slx
+o = struct('plant','switched','pwm','center','ff_mode','measured','delay',1);
+out = sim_boost('cascade_pi', g, P, o);                       % script version
+outs = sim_boost_simulink('cascade_pi', g, P, o);             % Simulink version, same numbers to ~1e-12
+```
+
+By hand, `boost_cycle` is `boost_avg` with five changes:
+1. `xp` has IC `XP0 = [iL0; Vo0; Vo0]`, with states [iL; vC; Vout].
+2. `xpDemux` has 3 outputs (iL, vC, Vout). **Vo is output 3** everywhere `boost_avg` uses output 2.
+3. Plant code:
+   ```matlab
+   function [xp_next, env] = plant(xp, d, R, Vin, PP)
+   [xp_next, env] = blk_plant_switched(xp, d, R, Vin, PP);
+   end
+   ```
+   Set `xp` to Size `[3 1]`.
+4. Add To Workspace `yenv` (Array, Ts), fed by `Plant/2`: env = [Vo_min Vo_max iL_min iL_max iL_avg Vo_avg dcm] for each period.
+5. Add To Workspace `yvc` (Array, Ts), fed by `xpDemux/2`.
+
+`setup_boost_workspace('boost_cycle', ...)` sets `PP = [L C Ts rL rC Ron VF nsub sync pwm_center]`. Put parasitics in `P` (e.g. `P.rC = 0.02`) or pass `Pplant`.
+
+---
+
+## 7. Stage 4b: Simscape Electrical
+
+Build it as a separate model, `boost_simscape.slx`. Copy the control side from `boost_avg`: `Scenario`, `k`, `Controller`, `xc`, `noise`, the `truth` Mux and the loggers. Replace the plant (`Plant`, `xp`, `xpDemux`, `io`) with a circuit.
+
+### Step 1: check the block names on your release
+
+```matlab
+info = check_simscape_block_params();
+```
+It adds each block below to a scratch model and prints the library path that worked, plus the real parameter names and values. Trust its output over this table when they differ.
+
+### Step 2: the power stage
+
+| Block | Library | "Ideal" check (to compare with the scripts) | Realistic runs |
+|---|---|---|---|
+| Controlled Voltage Source | Simscape > Foundation Library > Electrical > Electrical Sources | input = Vin from `Scenario` via Simulink-PS Converter (unit V) | same |
+| Inductor | Simscape > Foundation Library > Electrical > Electrical Elements | 500e-6 H, series resistance 0; Initial Targets: current 0 A, **priority High** | series resistance 0.05 Ω |
+| Current Sensor (iL) | Simscape > Foundation Library > Electrical > Electrical Sensors | in series with the inductor | same |
+| Ideal Semiconductor Switch | Simscape > Electrical > Semiconductors & Converters | On-state resistance 1e-3 Ω, Off-state conductance 1e-6, **Threshold voltage 0.5**, Integral protection diode None | Ron 0.02 Ω |
+| Diode | Simscape > Foundation Library > Electrical > Electrical Elements | **Forward voltage 0, On resistance 1e-4 Ω**, Off conductance 1e-8 (the 0.6 V / 0.3 Ω defaults are far too lossy) | 0.7 V, 0.02 Ω |
+| Capacitor | Electrical Elements | 470e-6 F, series resistance 0; Initial Targets: voltage 24 V, **priority High** | ESR 0.02 Ω |
+| Current Sensor (io) | Electrical Sensors | in series with the load | same |
+| Variable Resistor (load) | Electrical Elements | input = R from `Scenario` via Simulink-PS (unit Ohm); Minimum resistance 0.1 Ω | same |
+| Voltage Sensor ×2 | Electrical Sensors | Vo across the output (load side, so ESR is included as in `sim_boost`), Vin across the source | same |
+| Electrical Reference | Electrical Elements | one | same |
+| Solver Configuration | Simscape > Utilities | see Step 5 | same |
+| Simulink-PS / PS-Simulink Converter | Simscape > Utilities | units V, A, Ohm; **no input filtering on the gate signal** | same |
+
+Wiring: source + → inductor → iL sensor → switch node. Switch node → switch → ground. Switch node → diode anode, diode cathode → output node. Output node → capacitor → ground. Output node → io sensor → variable resistor → ground. Connect the Electrical Reference and the Solver Configuration to the circuit.
+
+### Step 3: PWM, centre-aligned
+
+- PWM Generator (Simscape > Electrical > Control > Pulse Width Modulation):
+  - **Carrier counter: Up-down.**
+  - Set its timing so one PWM period is 50 µs. The docs give *Timer period* = half the PWM period for up-down, i.e. 25e-6.
+  - Sample time = your solver step.
+- Gate output → Simulink-PS Converter → switch gate G.
+- **Check it on a scope before going further.** With a constant duty of 0.2, the gate must be high for the first 5 µs and the last 5 µs of every 50 µs period, i.e. centred on t = k·Ts.
+- If it's centred on (k+½)·Ts instead, use this unambiguous fallback:
+  - carrier: Repeating Sequence with Time values `[0 Ts/2 Ts]` and Output values `[0 1 0]`;
+  - gate: Relational Operator `duty > carrier`, zero-crossing detection on.
+
+Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON pulse, which in CCM is the average inductor current. That's what the controllers assume, and what `sim_boost(..., 'pwm','center')` models.
+
+### Step 4: sampling and delay
+
+- For each sensed signal (Vo, iL, io, Vin): PS-Simulink Converter → **Zero-Order Hold, sample time `[Ts 0]`** → `truth` Mux, in the order Vo, iL, io, Vin, R. R comes from `Scenario`, as before.
+- Controller `d` → **Unit Delay (IC `D_ss` = 0.5, sample time Ts)** → PWM duty input.
+  - This is the DSP's one-sample latency.
+  - It also breaks the algebraic loop that ESR would otherwise create (sensor → controller → gate → sensor in the same instant).
+  - Since this block now provides the delay, write `CP` with delay 0:
+    ```matlab
+    setup_boost_workspace('boost_simscape','cascade_pi',g,P,struct('ff_mode','measured','delay',0));
+    ```
+  - Compare against `sim_boost(..., 'plant','switched','pwm','center','delay',1)`, which has the same total delay.
+- **FCS-MPC**:
+  - bypass the PWM. Use controller `d` (0/1) → Unit Delay (IC 0) → Simulink-PS → G, with a Manual Switch or Variant Subsystem to choose between the paths;
+  - it has no delay compensation, so a 1-sample delay hurts it. Its prediction should be extended to k+2 if you keep the delay.
+
+### Step 5: solver
+
+| Where | Setting | Value |
+|---|---|---|
+| Solver Configuration | Use local solver | on |
+| | Solver type | Backward Euler (Trapezoidal rings after switching events) |
+| | Sample time | `1e-7` (Ts/1e-7 = 500; must be an integer) |
+| | Start simulation from steady state | **off**: you want the start-up, and Partitioning errors with it on |
+| Model Settings → Solver | Fixed-step, discrete, step size | `1e-7` |
+| MATLAB Function blocks | Update method / Sample time | Discrete / `Ts` (otherwise they run every 0.1 µs) |
+| Simscape logging | | off for batch runs |
+
+**Step size.** PWM edges snap to the solver step. At 5e-7 the duty resolution is 1 %, which is about 1 V on Vo at D = 0.5, enough to cause limit cycles. Stay at 1e-7 or below.
+
+**Reference run.** For exact edge timing: local solver off, variable-step `daessc` (or `ode23t`), RelTol 1e-6, MaxStep ≤ Ts/100, zero-crossing detection on.
+
+**Speed.** Once it works, try Solver type = **Partitioning**, which is usually faster on switched-linear circuits. If it rejects the Variable Resistor, model the load step as a fixed 20 Ω resistor in parallel with 20 Ω + a Foundation Switch closed at 50 ms.
+
+### Step 6: validate, in this order
+
+1. **Open loop against the exact plant.** Save a copy of the power stage with the duty coming from root Inport 1 (`boost_ss_openloop.slx`), R and Vin as constants, and iL and Vo logged as timeseries `iL_sim` and `Vo_sim`. Then:
+   ```matlab
+   Pp = boost_params(); Pp.pwm = 'center';   % add rL/rC/Ron/VF if your blocks have them
+   res = simscape_compare_openloop('boost_ss_openloop', 0.5*ones(400,1), ...
+         struct('P',Pp,'pwm','center','R',20,'Vin',24,'iL0',0,'vC0',24));
+   ```
+   This compares every period (boundary values, min, max, average) with `plant_switched_step`. Expect errors around 1e-3 relative; tolerances are 0.05 A / 0.05 V.
+2. **Ripple against theory.** At d = 0.5, 20 Ω, ideal parts, use `ripple_from_waveform(t, y, 20e3, [0.045 0.050])`:
+   - expected: ΔiL = 1.20 A peak-to-peak and ΔVo = 0.128 V (0.255 V at 10 Ω);
+   - always measure on the raw solver-step log, never on the ZOH output (sampling at exactly fs aliases the ripple to a constant);
+   - the function uses a whole number of PWM periods and warns when a period has fewer than 20 points.
+3. **DCM.** At R = 500 Ω, d = 0.5, Vout should be about 73.19 V, with each period idle for 12.80 µs.
+4. **Closed loop.** Compare the ZOH outputs with `sim_boost(ctrl, g, P, struct('plant','switched','pwm','center','delay',1,'ff_mode','measured'))`. Expect close, not identical: the PWM edges are quantised to the solver step.
+
+### Step 7: sweeps on Simscape
+
+- Make the parameters you sweep **Run-time** configurable: block → Property Inspector → parameter → Configurability = Run-time. Do this for L, C, the series resistances, Ron and Vf. Otherwise Fast Restart can't change them.
+- Then a `SimulationInput` array can sweep them.
+- Don't run MOPSO on Simscape. Re-evaluate the final Pareto set on it.
+
+---
+
+## 8. Stage 5: robustness battery, LaTeX table, figures
+
+```matlab
+cfg = study_config('scenario_set','worst_case');
+cfg.rob.controllers = {'fcsmpc','cascade_pi','cascade_pid','smc'};   % single-loop PI left out
+rob = run_robustness(res, cfg);                 % uses res.gains_table from Stage 3
+tex = robustness_to_latex(rob, 'table_robustness.tex');
+figs = make_paper_figures(struct('mopso',res,'rob',rob), cfg);
+```
+
+The battery runs on the switched plant (centre PWM, measured feed-forward, the tuning delay):
+
+| Scenario | What |
+|---|---|
+| nominal | 20 → 10 Ω at 50 ms |
+| load_m55 | 20 → 8.9 Ω (−55 %; replaces the impossible −75 %; feasibility needs R ≥ Vref²/(Vin·IL_MAX) = 8 Ω) |
+| load_release | 10 → 20 Ω |
+| load_ramp | 20 → 10 Ω over 10 ms |
+| vin_p20 / vin_m20 | Vin ±20 % at 60 ms, 20 Ω |
+| L_m20, L_p20, C_m20, C_p20 | plant L or C ±20 %; the controllers keep the nominal values |
+| parasitics | rL 50 mΩ, rC 20 mΩ, Ron 20 mΩ, VF 0.7 V |
+| delay_plus | one extra sample of delay |
+| noise_mc | 20 mA / 50 mV noise on all four sensors + 10-bit ADC, **30 seeds**, mean ± std |
+
+Every scenario measures **after its own event**: recovery time, peak deviation, offset at the end. It also reports the start-up numbers and the true switching ripple from the per-period envelope. The battery takes about 4 min for 4 controllers in Octave.
+
+`robustness_to_latex` writes a `table*` with `%` and `_` escaped (the notebook's table wouldn't compile), sensible decimals, `--` for "did not settle", and a dagger for diverged runs. `make_paper_figures` writes 3.5-inch, Times New Roman 8 pt figures at 600 dpi:
+- Vo and iL over the run;
+- a load-step zoom;
+- the real ripple envelope;
+- Pareto fronts on one common normalisation;
+- hypervolume history across seeds.
+
+Single-loop PI is excluded by default.
+
+---
+
+## 9. Review findings and where each is fixed
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Feed-forward uses the true R and Vin | `ff_mode='measured'`; oracle kept only to reproduce the notebook |
+| 2 | Averaged model has no ripple, so the "ripple" numbers were drift | `boost_cycle` / Simscape, with ripple from the per-period envelope or the raw waveform |
+| 3 | "SS error" was a drift tail | `metrics_event`: offset \|mean − Vref\| in a settled window, recovery time, peak deviation |
+| 4 | Outer loop never tuned | KPV, KIV in the search (`tune_outer`) |
+| 5 | Optimum on the search bounds; PSO stuck at the walls | wide log bounds, velocity reset, bound fractions reported |
+| 6 | Single-loop PI unstable | excluded from figures; redesign it (type-III, crossover well below the RHP zero) or drop it |
+| 7 | FCS-MPC moves iL 2.4 A per sample | switching-frequency objective; stated limitation; raise its rate if you keep it |
+| 8–9 | Inconsistent scope; arbitrary "before" gains | one controller list everywhere; report `study_config('legacy')` as "before" and say how the baselines were chosen |
+| 10 | Robustness metrics taken from start-up windows | every scenario is measured after its own event |
+| 11 | −75 % load step impossible | −55 % (8.9 Ω) |
+| 12 | Single noise seed | 30-seed Monte Carlo |
+| 13 | No L/C/ESR/DCR/delay tests | plant mismatch, parasitics, extra delay |
+| 14 | Compromise point = distance to origin | ideal-point compromise; the old rule is still available as `'origin_maxnorm'` |
+| 16 | LaTeX `%` unescaped | escaped, and a test checks it |
+| MOPSO | raw-unit crowding, duplicate archive entries, two RNG streams, crash on an all-duplicate archive | fixed; tested on ZDT1 and DTLZ2 |
+
+## 10. Pitfalls
+
+- **Stop time** `(N-1)*Ts`. Python's `int(0.075/Ts)` is 1499; the port keeps it.
+- **`in = in.setVariable(..., 'Workspace', mdl)`.** Always reassign. Without `'Workspace'` the model-workspace copy silently wins, and MOPSO sees constant objectives.
+- **Noise under Fast Restart.** A Random Number block's seed can't change under Fast Restart. Feed noise through the root Inport (as `sim_boost_simulink` does) or `blk_noise_lookup`.
+- **A MATLAB Function block on "Inherited"** runs at its input's rate: 0.1 µs in Simscape. Always set Discrete, `Ts`.
+- **Simulink-PS units only scale.** "mA" where you meant "A" multiplies by 1000 without a warning.
+- **Foundation Diode defaults** (0.6 V, 0.3 Ω) move the steady-state duty away from 0.5, and the D_ss feed-forward becomes wrong. When you use real diode parameters, consider a measured duty feed-forward `1 - Vin_meas/Vref`.
+- **Ripple:** never from a signal sampled at fs, and never from a decimated log.
+- **Rapid Accelerator** supports neither algebraic loops (before R2026a) nor Simscape logging.
+- **Delay** in `CP` is limited to 0–3 samples.
+- **MOPSO fronts won't match the notebook's numbers.** MATLAB and numpy draw different random numbers, so the legacy preset reproduces the notebook's rules, not its exact fronts. Objective values for given gains *are* exact.
+
+## 11. Files
+
+| Group | Files |
+|---|---|
+| Parameters, plant, control laws | `boost_params`, `plant_avg_step`, `plant_switched_step`, `sw_boost_period`, `ctrl_*`, `sense_adc` |
+| Simulation | `sim_boost` (scripts), `sim_boost_simulink` (Simulink batch), `emulate_simulink` (Octave emulation of the models) |
+| Simulink blocks | `blk_scenario`, `blk_controller`, `blk_plant_avg`, `blk_plant_switched`, `blk_noise_lookup`, `blk_profile_eval`; packers `make_ctrl_params`, `make_profile_vec`, `make_plant_params`, `setup_boost_workspace` |
+| Model tools | `build_boost_models`, `check_simulink_models`, `check_simscape_block_params`, `simscape_compare_openloop`, `ripple_from_waveform` |
+| Metrics | `metrics_legacy` (notebook, exact), `metrics_event` (corrected) |
+| Optimisation | `mopso`, `mopso_*`, `hypervolume_mc`, `study_config`, `objective_boost`, `run_mopso_study` |
+| Outputs | `run_robustness`, `robustness_to_latex`, `make_paper_figures` |
+| Tests | `run_all_tests`, `tests/test_*.m`, Python reference data in `tests/ref/` |

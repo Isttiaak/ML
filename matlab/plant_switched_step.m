@@ -1,10 +1,24 @@
-function [iL1, Vo1, info] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
+function [iL1, Vo1, info, wave] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
 %PLANT_SWITCHED_STEP  One PWM period of the switched (cycle-resolved) boost.
 %   [iL1, Vo1, info] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
+%   [iL1, Vo1, info, wave] = plant_switched_step(...)   also returns the
+%                                                       sampled waveform
 %
-%   Advances exactly one control period P.Ts with trailing-edge PWM: switch
-%   ON for t in [0, d*Ts), OFF for [d*Ts, Ts).  The period is split exactly
-%   at t_on = d*Ts.
+%   Advances exactly one control period P.Ts, which starts at the sampling
+%   instant t = 0.  PWM alignment is selected by P.pwm:
+%     'trailing' (default, also when the field is missing): trailing-edge
+%        PWM, switch ON for t in [0, d*Ts), OFF for [d*Ts, Ts).  A sample at
+%        t = 0 sees the ripple VALLEY of iL (bias -dI/2 in CCM).
+%     'center' (or 'centre'): centre-aligned PWM (up-down carrier whose
+%        valley is at t = 0): ON for [0, d*Ts/2), OFF for [d*Ts/2, Ts -
+%        d*Ts/2), ON for [Ts - d*Ts/2, Ts).  t = 0 is the MIDDLE of an ON
+%        pulse, so in CCM the sample at t = 0 equals the period average of
+%        iL (no dI/2 bias).  The ON pulse straddles the period boundary:
+%        its second half [Ts - d*Ts/2, Ts) uses the duty d of THIS call,
+%        the first half of the next period uses the next call's duty, so a
+%        duty change makes the pulse around k*Ts asymmetric (width
+%        (d_k + d_k+1)*Ts/2, centre shifted by (d_k+1 - d_k)*Ts/4).
+%   Numeric P.pwm is also accepted (0 = trailing, nonzero = centre).
 %     iL     inductor current [A]; clamped to >= 0 unless P.sync is true
 %     Vo     CAPACITOR voltage vC [V] (state).  Terminal voltage incl. the
 %            ESR drop is returned in info.Vout_end.
@@ -17,19 +31,28 @@ function [iL1, Vo1, info] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
 %            diode is replaced by a high-side switch with resistance Ron
 %            (VF ignored), current may reverse and there is no DCM.  The
 %            legacy averaged model (plant_avg_step) lets iL go negative,
-%            so it corresponds to sync = true.
+%            so it corresponds to sync = true.  Optional P.pwm (above).
 %     nsub   sample points per period (default 100), split between ON and
 %            OFF in proportion to d, at least 1 in each non-empty interval
+%            (centre PWM: the ON points are split between the two halves)
 %   Returns iL1, Vo1 = states at t = Ts and info with fields
-%     Vout_end  terminal voltage at t = Ts- (topology active before the end)
+%     Vout_end  terminal voltage at t = Ts- (topology active before the end;
+%               centre PWM with d > 0: switch ON, Vout = kR*vC)
 %     iL_min, iL_max, Vout_min, Vout_max   extremes over the sample points
 %               (both sides of the ESR step at a switching instant included)
 %     iL_avg, Vout_avg, vC_avg   period averages (trapezoid on the points)
 %     dcm       true if the diode current reached 0 (inductor idle)
-%     t_on      d*Ts;  t_idle  time spent in the idle (DCM) topology
-%     iL_mid_on, Vout_mid_on   values at t = t_on/2 (centre of the ON
-%               pulse, where a DSP usually samples: in CCM iL there equals
-%               the period average, while iL at t = 0 is the ripple valley)
+%     t_on      d*Ts (total ON time in both modes);  t_idle  time spent in
+%               the idle (DCM) topology
+%     iL_mid_on, Vout_mid_on   value at the centre of the ON pulse, where a
+%               DSP usually samples (in CCM iL there equals the period
+%               average).  Trailing: at t = t_on/2 (iL at t = 0 is the
+%               valley).  Centre: at t = 0, i.e. the start sample itself
+%               (the input iL after clamping, Vout = kR*Vo).
+%   wave (only computed when requested) has column vectors t (relative to
+%   the period start, 0..Ts), iL, vC, Vout at all sample points; switching
+%   instants appear twice (before/after), so use it with trapz or
+%   ripple_from_waveform, not with interp1.
 %
 %   Circuit: Vin - L (DCR rL) - switch node; switch (Ron) node->ground when
 %   ON; diode (drop VF, ideal otherwise) node->output when OFF; output = C
@@ -46,6 +69,8 @@ function [iL1, Vo1, info] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
 %   sync = true: OFF is always 'conducting' with rL -> rL + Ron and VF = 0.
 %   With rC = 0: kR = 1, g = 1/R and Vout = vC, i.e. the averaged model of
 %   plant_avg_step is recovered by weighting ON/OFF with d and 1-d.
+%   DCM can only start inside the OFF interval (in both PWM modes); with
+%   centre PWM an idle inductor restarts from iL = 0 in the second ON half.
 %
 %   Integration: each topology is linear time-invariant, so it is solved
 %   EXACTLY (closed-form 2x2 matrix exponential, x(t) = xeq + e^(A t)(x0-xeq),
@@ -60,7 +85,7 @@ function [iL1, Vo1, info] = plant_switched_step(iL, Vo, d, R, Vin_k, P, nsub)
 %   conduct while the switch is ON (needs Ron*iL < Vout + VF), no reverse
 %   recovery, no dead time.
 %   sw_boost_period.m is the scalar, code-generation version (Simulink
-%   MATLAB Function block) of the same model.
+%   MATLAB Function block) of the same model (15th input pwm_center).
 
 if nargin < 7 || isempty(nsub)
     nsub = 100;
@@ -74,6 +99,21 @@ if isfield(P, 'rC'), rC = P.rC; end
 if isfield(P, 'Ron'), Ron = P.Ron; end
 if isfield(P, 'VF'), VF = P.VF; end
 sync = isfield(P, 'sync') && P.sync;
+center = false;
+if isfield(P, 'pwm') && ~isempty(P.pwm)
+    if ischar(P.pwm)
+        switch lower(P.pwm)
+            case {'center', 'centre'}
+                center = true;
+            case 'trailing'
+                center = false;
+            otherwise
+                error('plant_switched_step:pwm', 'P.pwm must be ''trailing'' or ''center''');
+        end
+    else
+        center = P.pwm ~= 0;
+    end
+end
 
 nsub = max(1, round(nsub));
 d = min(max(d, 0), 1);
@@ -98,33 +138,41 @@ dcm = false;
 t_idle = 0;
 iLm = iL;
 Vm = NaN;
+a = -(rL + Ron) / L;              % ON: diL/dt = a*iL + Vin/L
+VinL = Vin_k / L;
 
-% ---------------- ON interval: decoupled first-order equations ----------
+% ---------------- ON interval(s): decoupled first-order equations -------
 % All sample points of the period are collected in T (time), I (iL),
 % V (vC) and O (Vout) and reduced once at the end.  A switching instant
 % appears twice in T (zero-width trapezoid) so that the ESR step in Vout is
 % represented on both sides.
-if n_on > 0
-    T = (0:n_on) * (t_on / n_on);
-    a = -(rL + Ron) / L;
-    if a == 0
-        I = iL + (Vin_k / L) * T;
-    else
-        I = iL * exp(a * T) + (Vin_k / L) * (expm1(a * T) / a);
-    end
-    V = vC * exp(-gC * T);
+if n_on > 0 && ~center
+    % trailing edge: one ON interval [0, t_on)
+    [T, I, V] = sw_on_seg(iL, vC, t_on, n_on, a, VinL, gC);
     O = kR * V;
     tm = 0.5 * t_on;
     if a == 0
-        iLm = iL + (Vin_k / L) * tm;
+        iLm = iL + VinL * tm;
     else
-        iLm = iL * exp(a * tm) + (Vin_k / L) * (expm1(a * tm) / a);
+        iLm = iL * exp(a * tm) + VinL * (expm1(a * tm) / a);
     end
     Vm = kR * vC * exp(-gC * tm);
     iL = I(end);
     vC = V(end);
+    t_off0 = t_on;                % OFF interval starts here
+elseif n_on > 0
+    % centre aligned: first ON half [0, t_on/2); iL_mid_on = start sample
+    n_a = ceil(n_on / 2);
+    n_b = max(n_on - n_a, 1);
+    t_half = 0.5 * t_on;
+    [T, I, V] = sw_on_seg(iL, vC, t_half, n_a, a, VinL, gC);
+    O = kR * V;
+    iL = I(end);
+    vC = V(end);
+    t_off0 = t_half;
 else
     T = []; I = []; V = []; O = [];
+    t_off0 = 0;
 end
 
 % ---------------- OFF interval: conducting / idle segments ---------------
@@ -215,7 +263,7 @@ if n_off > 0
             dcm = true;
             t_idle = t_idle + tau(end);
         end
-        T = [T, (t_on + ts) + tau]; %#ok<AGROW>
+        T = [T, (t_off0 + ts) + tau]; %#ok<AGROW>
         I = [I, iv]; %#ok<AGROW>
         V = [V, vv]; %#ok<AGROW>
         O = [O, ov]; %#ok<AGROW>
@@ -232,18 +280,43 @@ if n_off > 0
     end
 end
 
+% ---------------- centre aligned: second ON half [Ts - t_on/2, Ts) -------
+if n_on > 0 && center
+    [T2, I2, V2] = sw_on_seg(iL, vC, t_half, n_b, a, VinL, gC);
+    T = [T, (t_half + t_off) + T2];
+    I = [I, I2];
+    V = [V, V2];
+    O = [O, kR * V2];
+    iL = I2(end);
+    vC = V2(end);
+end
+
 % trapezoid weights on the (non-uniform) sample times
 dT = diff(T);
 wt = 0.5 * ([dT, 0] + [0, dT]);
 iL1 = iL;
 Vo1 = vC;
-if n_on == 0
-    Vm = O(1);                        % d = 0: sample at t = 0 (OFF state)
+if n_on == 0 || center
+    Vm = O(1);                        % sample at t = 0 (d = 0: OFF state)
 end
 info = struct('Vout_end', O(end), 'iL_min', min(I), 'iL_max', max(I), ...
     'Vout_min', min(O), 'Vout_max', max(O), 'iL_avg', (I * wt.') / Ts, ...
     'Vout_avg', (O * wt.') / Ts, 'vC_avg', (V * wt.') / Ts, 'dcm', dcm, ...
     't_on', t_on, 't_idle', t_idle, 'iL_mid_on', iLm, 'Vout_mid_on', Vm);
+if nargout > 3
+    wave = struct('t', T(:), 'iL', I(:), 'vC', V(:), 'Vout', O(:));
+end
+end
+
+function [T, I, V] = sw_on_seg(iL, vC, tlen, n, a, VinL, gC)
+% switch ON for tlen from (iL, vC), n + 1 equally spaced points
+T = (0:n) * (tlen / n);
+if a == 0
+    I = iL + VinL * T;
+else
+    I = iL * exp(a * T) + VinL * (expm1(a * T) / a);
+end
+V = vC * exp(-gC * T);
 end
 
 function [iv, vv] = sw_ccm_eval(tau, di0, dv0, K)

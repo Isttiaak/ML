@@ -10,7 +10,10 @@ inputs, and compares the per-period outputs.
 
 The model here is written from the circuit (KVL around the inductor loop,
 KCL at the output node) and integrated with classical RK4 at a step of at
-most 1e-8 s.  The switching instant d*Ts is a step boundary.  Diode events
+most 1e-8 s.  The switching instants are step boundaries: d*Ts for
+trailing-edge PWM; d*Ts/2 and Ts - d*Ts/2 for centre-aligned PWM (column
+pwm_center = 1: ON [0, d*Ts/2), OFF, ON [Ts - d*Ts/2, Ts), written here
+directly from that definition, not from the MATLAB code).  Diode events
 (iL reaching 0, re-conduction when Vout < Vin - VF) are located by bisection
 on the RK4 step fraction.  Averages are trapezoidal on the fine grid and
 min/max are taken over all fine points (both sides of each switching
@@ -160,6 +163,7 @@ def simulate(par, seq):
     ck = Circuit(par["L"], par["C"], par["rL"], par["rC"], par["Ron"], par["VF"],
                  par["sync"] != 0)
     Ts = par["Ts"]
+    centre = par.get("pwm_center", 0.0) != 0
     il, vc = par["iL0"], par["vC0"]
     res = []
     for d, R, vin in seq:
@@ -169,16 +173,24 @@ def simulate(par, seq):
         t_on = d * Ts
         acc = Acc()
         mode = 0
-        if t_on > 0.0:
-            mode, il, vc = run_interval(ck, 0, il, vc, R, vin, 0.0, t_on, acc)
-        if Ts - t_on > 0.0:
+        # switch-ON intervals before / after the OFF interval
+        if centre:
+            on1 = on2 = 0.5 * t_on
+        else:
+            on1, on2 = t_on, 0.0
+        t_off = Ts - t_on
+        if on1 > 0.0:
+            mode, il, vc = run_interval(ck, 0, il, vc, R, vin, 0.0, on1, acc)
+        if t_off > 0.0:
             vo_idle = ck.vout(2, 0.0, vc, R)
             if (not ck.sync) and il <= 0.0 and (vin - ck.VF) - vo_idle < 0.0:
                 mode = 2
                 acc.dcm = True
             else:
                 mode = 1
-            mode, il, vc = run_interval(ck, mode, il, vc, R, vin, t_on, Ts - t_on, acc)
+            mode, il, vc = run_interval(ck, mode, il, vc, R, vin, on1, t_off, acc)
+        if on2 > 0.0:
+            mode, il, vc = run_interval(ck, 0, il, vc, R, vin, on1 + t_off, on2, acc)
         res.append({
             "iL1": il, "vC1": vc, "Vout_end": acc.pv,
             "iL_avg": acc.si / Ts, "Vout_avg": acc.sv / Ts,
@@ -229,7 +241,8 @@ def main():
             print("%-14s %-9s %12.3e %10s %s" % (c["name"], f, diff,
                                                  "-" if tol is None else "%.0e" % tol, res))
         ndcm = sum(p["dcm"] for p in py)
-        print("%-14s periods=%d dcm_periods=%d python_time=%.1fs" % (c["name"], len(py), ndcm, el))
+        print("%-14s periods=%d dcm_periods=%d pwm=%s python_time=%.1fs" % (
+            c["name"], len(py), ndcm, "center" if par.get("pwm_center", 0.0) else "trailing", el))
     print("OVERALL:", "PASS" if ok_all else "FAIL")
     return 0 if ok_all else 1
 

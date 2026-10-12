@@ -1,17 +1,27 @@
 function [iL1, vC1, Vout_end, iL_min, iL_max, Vout_min, Vout_max, iL_avg, Vout_avg, dcm, t_idle, ...
-    iL_mid_on, Vout_mid_on] = sw_boost_period(iL, vC, d, R, Vin, L, C, Ts, rL, rC, Ron, VF, nsub, sync)
+    iL_mid_on, Vout_mid_on] = sw_boost_period(iL, vC, d, R, Vin, L, C, Ts, rL, rC, Ron, VF, nsub, sync, ...
+    pwm_center)
 %SW_BOOST_PERIOD  Scalar, code-generation version of plant_switched_step.
 %   [iL1, vC1, Vout_end, iL_min, iL_max, Vout_min, Vout_max, iL_avg, ...
 %    Vout_avg, dcm, t_idle, iL_mid_on, Vout_mid_on] = sw_boost_period(iL, ...
-%        vC, d, R, Vin, L, C, Ts, rL, rC, Ron, VF, nsub, sync)
+%        vC, d, R, Vin, L, C, Ts, rL, rC, Ron, VF, nsub, sync, pwm_center)
 %   Same circuit, topologies and exact solution as plant_switched_step (see
-%   its help for the state equations); all arguments are scalar doubles,
-%   sync is 0 (diode) or 1 (synchronous, = P.sync) and dcm is returned as 0/1.  The sample points are propagated one by one
-%   with the precomputed step matrix, so the code has no arrays, structs or
-%   dynamic sizing and can be pasted into a Simulink MATLAB Function block
-%   executed every Ts (unit delays on iL1 and vC1 close the loop).  Results
-%   equal plant_switched_step to rounding (see tests/test_switched_plant).
+%   its help for the state equations and the PWM conventions); all
+%   arguments are scalar doubles, sync is 0 (diode) or 1 (synchronous,
+%   = P.sync), pwm_center is 0 (trailing edge, default when omitted) or 1
+%   (centre aligned: ON [0, d*Ts/2), OFF, ON [Ts - d*Ts/2, Ts), = P.pwm
+%   'center'), and dcm is returned as 0/1.  iL_mid_on / Vout_mid_on are the
+%   values at the centre of the ON pulse: t = d*Ts/2 (trailing) or t = 0
+%   (centre, i.e. the start sample).  The sample points are propagated one
+%   by one with the precomputed step matrix, so the code has no arrays,
+%   structs or dynamic sizing and can be pasted into a Simulink MATLAB
+%   Function block executed every Ts (unit delays on iL1 and vC1 close the
+%   loop).  Results equal plant_switched_step to rounding (~1e-13, see
+%   tests/test_switched_plant and tests/test_centre_pwm).
 %#codegen
+if nargin < 15
+    pwm_center = 0;
+end
 nsub = max(1, round(nsub));
 d = min(max(d, 0), 1);
 if iL < 0 && sync == 0
@@ -29,47 +39,41 @@ elseif t_on > 0
 else
     n_on = 0; n_off = nsub;
 end
+center = (pwm_center ~= 0) && (n_on > 0);
 
 iL_min = Inf; iL_max = -Inf; Vout_min = Inf; Vout_max = -Inf;
 Si = 0; Sv = 0;
 dcm = 0;
 t_idle = 0;
 Vout_end = kR * vC;
+o = Vout_end;                     % (defined on every path for code generation)
 iL_mid_on = iL;
 Vout_mid_on = 0;
+a = -(rL + Ron) / L;
+n_b = 1;
+t_half = 0;
 
-% ON interval
+% ON interval (trailing) or first ON half (centre)
 if n_on > 0
-    h = t_on / n_on;
-    a = -(rL + Ron) / L;
-    if a == 0
-        eI = 1;
-        gI = Vin / L * h;
+    if center
+        n_a = ceil(n_on / 2);
+        n_b = max(n_on - n_a, 1);
+        t_half = 0.5 * t_on;
+        h = t_half / n_a;
+        Vout_mid_on = kR * vC;
     else
-        eI = exp(a * h);
-        gI = Vin / L * expm1(a * h) / a;
+        n_a = n_on;
+        h = t_on / n_on;
+        tm = 0.5 * t_on;
+        if a == 0
+            iL_mid_on = iL + Vin / L * tm;
+        else
+            iL_mid_on = iL * exp(a * tm) + Vin / L * expm1(a * tm) / a;
+        end
+        Vout_mid_on = kR * vC * exp(-gC * tm);
     end
-    eV = exp(-gC * h);
-    tm = 0.5 * t_on;
-    if a == 0
-        iL_mid_on = iL + Vin / L * tm;
-    else
-        iL_mid_on = iL * exp(a * tm) + Vin / L * expm1(a * tm) / a;
-    end
-    Vout_mid_on = kR * vC * exp(-gC * tm);
-    o = kR * vC;
-    iL_min = min(iL_min, iL); iL_max = max(iL_max, iL);
-    Vout_min = min(Vout_min, o); Vout_max = max(Vout_max, o);
-    for k = 1:n_on
-        i1 = iL * eI + gI;
-        v1 = vC * eV;
-        o1 = kR * v1;
-        Si = Si + 0.5 * h * (iL + i1);
-        Sv = Sv + 0.5 * h * (o + o1);
-        iL_min = min(iL_min, i1); iL_max = max(iL_max, i1);
-        Vout_min = min(Vout_min, o1); Vout_max = max(Vout_max, o1);
-        iL = i1; vC = v1; o = o1;
-    end
+    [iL, vC, o, Si, Sv, iL_min, iL_max, Vout_min, Vout_max] = sw_on(iL, vC, h, n_a, a, Vin, L, ...
+        gC, kR, Si, Sv, iL_min, iL_max, Vout_min, Vout_max);
     Vout_end = o;
 end
 
@@ -188,10 +192,45 @@ if n_off > 0
     Vout_end = o;
 end
 
+% centre aligned: second ON half [Ts - t_on/2, Ts), uses this period's d
+if center
+    h = t_half / n_b;
+    [iL, vC, o, Si, Sv, iL_min, iL_max, Vout_min, Vout_max] = sw_on(iL, vC, h, n_b, a, Vin, L, ...
+        gC, kR, Si, Sv, iL_min, iL_max, Vout_min, Vout_max);
+    Vout_end = o;
+end
+
 iL1 = iL;
 vC1 = vC;
 iL_avg = Si / Ts;
 Vout_avg = Sv / Ts;
+end
+
+function [iL, vC, o, Si, Sv, iL_min, iL_max, Vout_min, Vout_max] = sw_on(iL, vC, h, n, a, Vin, L, ...
+    gC, kR, Si, Sv, iL_min, iL_max, Vout_min, Vout_max)
+% switch ON for n steps of h from (iL, vC); trapezoid sums and extremes
+% (the start point is included, i.e. the ON side of the switching instant)
+if a == 0
+    eI = 1;
+    gI = Vin / L * h;
+else
+    eI = exp(a * h);
+    gI = Vin / L * expm1(a * h) / a;
+end
+eV = exp(-gC * h);
+o = kR * vC;
+iL_min = min(iL_min, iL); iL_max = max(iL_max, iL);
+Vout_min = min(Vout_min, o); Vout_max = max(Vout_max, o);
+for k = 1:n
+    i1 = iL * eI + gI;
+    v1 = vC * eV;
+    o1 = kR * v1;
+    Si = Si + 0.5 * h * (iL + i1);
+    Sv = Sv + 0.5 * h * (o + o1);
+    iL_min = min(iL_min, i1); iL_max = max(iL_max, i1);
+    Vout_min = min(Vout_min, o1); Vout_max = max(Vout_max, o1);
+    iL = i1; vC = v1; o = o1;
+end
 end
 
 function [E11, E12, E21, E22] = sw_e2(t, s, m11, a12, a21, Dl)

@@ -1,8 +1,11 @@
 function res = test_switched_plant(csv_dir)
 %TEST_SWITCHED_PLANT  Tests of plant_switched_step (and sw_boost_period).
+%   Trailing-edge PWM (the default); centre-aligned PWM (P.pwm = 'center')
+%   is tested in tests/test_centre_pwm.m.
 %   res = test_switched_plant()         run all checks, print a table
 %   res = test_switched_plant(csv_dir)  also write the CSV files read by
 %                                       python3 -I tests/switched_crosscheck.py csv_dir
+%                                       (trailing and centre-PWM cases)
 %   res(i) has fields name, passed, detail.  Raises an error at the end if
 %   any check failed.  Takes about 30 s in Octave 8.4.
 %   a  open-loop steady state vs textbook CCM ripple formulas (R = 20, 10)
@@ -246,9 +249,10 @@ res = sw_add(res, 'h_edge_cases', ok, msg);
 
 % ---------------------------------------------------------------- i ------
 % Closed loop through sim_boost (core agent's file, plant = 'switched').
-% sim_boost samples iL at the period start = ripple valley, so the inner
-% loop sees ~dI/2 = 0.6 A less than the average current; this check
-% documents that bias (use mid-ON sampling / iL_avg to remove it).
+% With trailing-edge PWM sim_boost samples iL at the period start = ripple
+% valley, so the inner loop sees ~dI/2 = 0.6 A less than the average
+% current; this check documents that bias (opts.pwm = 'center' samples the
+% middle of the ON pulse and removes it, see test_centre_pwm).
 try
     o = sim_boost('cascade_pi', [], P, struct('plant', 'switched', 'nsub', 50));
     oa = sim_boost('cascade_pi', [], P, struct('plant', 'avg'));

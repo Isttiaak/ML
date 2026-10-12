@@ -31,6 +31,16 @@ function out = sim_boost(ctrl, gains, P, opts)
 %     plant       'avg' (default, legacy Euler averaged model) | 'switched'
 %                 (plant_switched_step: PWM, ripple, parasitics rL rC Ron VF)
 %     nsub        sub-steps per period for the switched plant (default 100)
+%     pwm         switched plant only: 'trailing' (default) | 'center' ('centre')
+%                 PWM alignment w.r.t. the sampling instant t = (k-1)*Ts
+%                 (see plant_switched_step).  'trailing': ON [0, d*Ts), the
+%                 sample sees the iL valley (bias -dI/2 = -0.6 A at the
+%                 nominal point) and the end-of-OFF Vo.  'center': up-down
+%                 carrier with its valley at the sample, ON [0, d*Ts/2) and
+%                 [Ts - d*Ts/2, Ts), so the sample is the middle of the ON
+%                 pulse = period-average iL in CCM.  Like delay = 0, both
+%                 assume the new duty acts right at the sampling instant.
+%                 Default = Pplant.pwm if that field exists, else 'trailing'.
 %     Pplant      parameter struct for the PLANT only (default P).  Use it for
 %                 L/C/ESR/DCR mismatch tests: controllers keep using P.
 %     T_end       run length override; N = fix(T_end/Ts) as in Python
@@ -46,7 +56,7 @@ function out = sim_boost(ctrl, gains, P, opts)
 %     R, Vin              load and input-voltage profiles
 %     J (+ u = d)         FCS-MPC only
 %     switched plant only, per period k (k = N is NaN): Vc, Vo_min, Vo_max,
-%     iL_min, iL_max, iL_avg, Vo_avg, dcm
+%     iL_min, iL_max, iL_avg, Vo_avg, dcm  (iL_avg(k) - iL(k) = sampling bias)
 %     info                resolved options
 %   The controller is evaluated at every sample including the last one; the
 %   state update stops at sample N, so samples 1..N match the notebook arrays
@@ -131,6 +141,27 @@ if ~switched && ~strcmp(plant, 'avg')
 end
 nsub = getopt(opts, 'nsub', 100);
 Pp = getopt(opts, 'Pplant', P);
+pwm = getopt(opts, 'pwm', getopt(Pp, 'pwm', 'trailing'));
+if ~ischar(pwm)                    % numeric 0/1 accepted
+    if pwm ~= 0
+        pwm = 'center';
+    else
+        pwm = 'trailing';
+    end
+end
+pwm = lower(pwm);
+switch pwm
+    case 'trailing'
+    case {'center', 'centre'}
+        pwm = 'center';
+    otherwise
+        error('sim_boost:pwm', 'pwm must be ''trailing'' or ''center''');
+end
+if switched
+    Pp.pwm = pwm;                  % read by plant_switched_step
+elseif strcmp(pwm, 'center')
+    warning('sim_boost:pwm', 'opts.pwm only affects the switched plant (opts.plant = ''switched'')');
+end
 if ~switched && (getopt(Pp, 'rL', 0) ~= 0 || getopt(Pp, 'rC', 0) ~= 0 || ...
         getopt(Pp, 'Ron', 0) ~= 0 || getopt(Pp, 'VF', 0) ~= 0)
     warning('sim_boost:parasitics', ...
@@ -305,7 +336,7 @@ if switched
     out.dcm = dcm;
 end
 out.info = struct('ctrl', name, 'gains', gains, 'ff_mode', ff_mode, 'delay', delay, ...
-    'plant', plant, 'nsub', nsub, 'KPV', KPV, 'KIV', KIV, 'IL_MAX', IL_MAX, ...
+    'plant', plant, 'nsub', nsub, 'pwm', pwm, 'KPV', KPV, 'KIV', KIV, 'IL_MAX', IL_MAX, ...
     'noise_std', sd, 'adc_bits', bits, 'seed', seed, 'N', N, 'Ts', Ts);
 out.info.load = lspec;
 out.info.vin = vspec;
