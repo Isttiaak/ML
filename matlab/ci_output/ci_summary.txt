@@ -1,0 +1,7 @@
+ci_build summary (MATLAB 23.2.0.3097123 (R2023b) Update 11)
+PASS build_boost_models                 /home/runner/work/ML/ML/matlab/boost_avg.slx, /home/runner/work/ML/ML/matlab/boost_cycle.slx
+PASS export boost_avg R2021b            /home/runner/work/ML/ML/matlab/models_R2021b/boost_avg_R2021b.slx
+PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2021b/boost_cycle_R2021b.slx
+PASS check_simulink_models              38/38 rows pass
+PASS check_simscape_block_params        printed in the log
+PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
