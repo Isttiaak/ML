@@ -14,7 +14,7 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In ci_build (line 44)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
@@ -28,7 +28,7 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In ci_build (line 44)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -50,7 +50,7 @@ problems.]
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
 In ci_build (line 78)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
@@ -65,7 +65,7 @@ problems.]
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
 In ci_build (line 78)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -548,9 +548,9 @@ Use these names with set_param(blk, name, value); unit parameters end in _unit.
 MATLAB workspace or path. Type "which -all boost_simscape" at the command line
 to find the other uses of this name. You should change the name of the model to
 avoid problems.] 
-[> In build_boost_simscape (line 60)
+[> In build_boost_simscape (line 61)
 In ci_build (line 104)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   set_param(ComponentPath) failed: SimscapeComponentBlock block (mask) does not have a parameter named 'ComponentPath'
   PowerStage: SourceFile = boost_stage
   PowerStage ports: 3 left (LConn), 4 right (RConn)
@@ -572,10 +572,10 @@ Export successful: '<a href="matlab:uiopen('/home/runner/work/ML/ML/matlab/model
 MATLAB workspace or path. Type "which -all boost_simscape" at the command line
 to find the other uses of this name. You should change the name of the model to
 avoid problems.] 
-[> In build_boost_simscape (line 60)
+[> In build_boost_simscape (line 61)
 In check_simscape_model (line 27)
 In ci_build (line 118)
-In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)] 
+In command_733102ac_705c_4812_9f8e_3072eb94b5a6 (line 1)] 
   set_param(ComponentPath) failed: SimscapeComponentBlock block (mask) does not have a parameter named 'ComponentPath'
   PowerStage: SourceFile = boost_stage
   PowerStage ports: 3 left (LConn), 4 right (RConn)
@@ -592,38 +592,38 @@ In command_05180103_282b_41c5_be8f_636fe01dfb96 (line 1)]
   boost_simscape: built without manual steps
 
 RES   CHECK                                                     DETAIL
-FAIL  (s1) open loop iL ripple vs exact plant                   1.2372 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 3.0 s sim)
-FAIL  (s1) open loop Vo ripple vs exact plant                   0.1824 V vs 0.1276 V (analytic Io*d*Ts/C 0.1280 V), mean Vo 48.146 V
-FAIL  (s1) open loop samples vs plant_switched_step             max|diL| 0.216 A, max|dVo| 0.356 V
-PASS  (s2) closed loop cascade_pi vs sim_boost switched         max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (11.9 s sim)
-PASS  (s3) closed loop fcsmpc vs sim_boost switched             max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.3 s sim)
-2 of 5 checks passed (boost_simscape)
+PASS  (s1) open loop iL ripple vs exact plant                   1.2004 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 2.1 s sim)
+PASS  (s1) open loop Vo ripple vs exact plant                   0.1281 V vs 0.1276 V (analytic Io*d*Ts/C 0.1276 V), mean Vo 47.991 V
+PASS  (s1) open loop samples vs plant_switched_step             max|diL| 0.00448 A, max|dVo| 0.00311 V
+PASS  (s2) closed loop cascade_pi vs sim_boost switched         max|dVo| 0.0418 V, max|diL| 0.0356 A, |dmean Vo| 40-50 ms 0.0265 V (7.6 s sim)
+PASS  (s3) closed loop fcsmpc vs sim_boost switched             max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (7.0 s sim)
+5 of 5 checks passed (boost_simscape)
 
 ==== 5. run_all_tests
 ==== test_core_equivalence
-==== test_core_equivalence: PASS (0.8 s)
+==== test_core_equivalence: PASS (0.5 s)
 ==== test_metrics_event
 ==== test_metrics_event: PASS (0.1 s)
 ==== test_mopso
-==== test_mopso: PASS (2.1 s)
+==== test_mopso: PASS (1.5 s)
 ==== test_switched_plant
-==== test_switched_plant: PASS (0.7 s)
+==== test_switched_plant: PASS (0.6 s)
 ==== test_centre_pwm
-==== test_centre_pwm: PASS (1.4 s)
+==== test_centre_pwm: PASS (1.3 s)
 ==== test_simulink_blocks
-==== test_simulink_blocks: PASS (1.1 s)
+==== test_simulink_blocks: PASS (0.8 s)
 ==== test_drivers
-==== test_drivers: PASS (8.2 s)
+==== test_drivers: PASS (6.3 s)
 
 test                       state  time[s]  message
-test_core_equivalence      PASS       0.8  
+test_core_equivalence      PASS       0.5  
 test_metrics_event         PASS       0.1  
-test_mopso                 PASS       2.1  
-test_switched_plant        PASS       0.7  
-test_centre_pwm            PASS       1.4  
-test_simulink_blocks       PASS       1.1  
-test_drivers               PASS       8.2  
-7 passed, 0 failed, 0 skipped (14.3 s)
+test_mopso                 PASS       1.5  
+test_switched_plant        PASS       0.6  
+test_centre_pwm            PASS       1.3  
+test_simulink_blocks       PASS       0.8  
+test_drivers               PASS       6.3  
+7 passed, 0 failed, 0 skipped (11.2 s)
 
 ci_build summary (MATLAB 23.2.0.3097123 (R2023b) Update 11)
 PASS build_boost_models                 /home/runner/work/ML/ML/matlab/boost_avg.slx, /home/runner/work/ML/ML/matlab/boost_cycle.slx
@@ -632,10 +632,10 @@ PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
 PASS build_boost_simscape               /home/runner/work/ML/ML/matlab/boost_simscape.slx
-FAIL check_simscape_model               2/5 rows pass
-      FAIL (s1) open loop iL ripple vs exact plant: 1.2372 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 3.0 s sim)
-      FAIL (s1) open loop Vo ripple vs exact plant: 0.1824 V vs 0.1276 V (analytic Io*d*Ts/C 0.1280 V), mean Vo 48.146 V
-      FAIL (s1) open loop samples vs plant_switched_step: max|diL| 0.216 A, max|dVo| 0.356 V
-      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (11.9 s sim)
-      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.3 s sim)
+PASS check_simscape_model               5/5 rows pass
+      PASS (s1) open loop iL ripple vs exact plant: 1.2004 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 2.1 s sim)
+      PASS (s1) open loop Vo ripple vs exact plant: 0.1281 V vs 0.1276 V (analytic Io*d*Ts/C 0.1276 V), mean Vo 47.991 V
+      PASS (s1) open loop samples vs plant_switched_step: max|diL| 0.00448 A, max|dVo| 0.00311 V
+      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0418 V, max|diL| 0.0356 A, |dmean Vo| 40-50 ms 0.0265 V (7.6 s sim)
+      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (7.0 s sim)
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
