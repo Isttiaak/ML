@@ -1,0 +1,64 @@
+name: Build Simulink models
+
+# Builds boost_avg.slx and boost_cycle.slx with real MATLAB/Simulink, validates
+# them (matlab/ci_build.m) and commits the generated files back to the branch.
+# MATLAB on GitHub-hosted runners is free for public repositories.
+
+on:
+  push:
+    branches: [claude/code-analysis-1h9o3a]
+    paths:
+      - 'matlab/**'
+      - '.github/workflows/build-simulink-models.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-simulink-models-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: R2023b
+          products: Simulink Simscape Simscape_Electrical
+
+      - name: Build and validate models
+        uses: matlab-actions/run-command@v2
+        with:
+          command: addpath('matlab'); ci_build
+
+      - name: Upload models and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulink-models
+          path: |
+            matlab/*.slx
+            matlab/models_R2021b/
+            matlab/ci_output/
+          if-no-files-found: warn
+
+      - name: Commit generated models
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A matlab/ci_output
+          git add matlab/*.slx matlab/models_R2021b 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "Build Simulink models with MATLAB R2023b (CI)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
