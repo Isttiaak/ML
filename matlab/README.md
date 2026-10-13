@@ -432,7 +432,7 @@ It adds each block to a scratch model and prints the library path that worked, p
 | Inductor | `fl_lib/Electrical/Electrical Elements/Inductor` | `l`, `r` (series), `i_L` (initial current, priority High) | 500e-6 H, r = 0, i_L = 0 A | r = 0.05 Ω |
 | Current Sensor | `fl_lib/Electrical/Electrical Sensors/Current Sensor` | output I | in series with the inductor, and one with the load | same |
 | Ideal Semiconductor Switch | `ee_lib/Semiconductors & Converters/Ideal Semiconductor Switch` | `Ron`, `Goff`, `Vth` (default 0.5), `diode_param` (keep None) | Ron 1e-3 Ω, Goff 1e-6 | Ron 0.02 Ω |
-| Diode | `fl_lib/Electrical/Electrical Elements/Diode` | `Vf`, `Ron`, `Goff` | **Vf = 0, Ron = 1e-4 Ω**, Goff 1e-8 (the 0.6 V / 0.3 Ω defaults are far too lossy) | 0.7 V, 0.02 Ω |
+| Diode | `fl_lib/Electrical/Electrical Elements/Diode` | `Vf`, `Ron`, `Goff` | **Vf = 1e-6 V** (it must be > 0), **Ron = 1e-4 Ω**, Goff 1e-8 (the 0.6 V / 0.3 Ω defaults are far too lossy) | 0.7 V, 0.02 Ω |
 | Capacitor | `fl_lib/Electrical/Electrical Elements/Capacitor` | `c`, `r` (ESR, default 1e-6), `vc` (initial voltage, priority High) | 470e-6 F, vc = 24 V | ESR 0.02 Ω |
 | Variable Resistor (load) | `fl_lib/Electrical/Electrical Elements/Variable Resistor` | input R, `Rmin` | R from `Scenario` via Simulink-PS (unit Ohm), Rmin 0.1 Ω | same |
 | Voltage Sensor ×2 | `fl_lib/Electrical/Electrical Sensors/Voltage Sensor` | output V | Vo across the load (ESR included, as in `sim_boost`), Vin across the source | same |

@@ -27,7 +27,7 @@ component boost_stage
         rL  = {0,      'Ohm'};   % Inductor series resistance (DCR)
         C   = {470e-6, 'F'};     % Capacitance
         rC  = {1e-6,   'Ohm'};   % Capacitor series resistance (ESR)
-        Vf  = {0,      'V'};     % Diode forward voltage
+        Vf  = {1e-6,   'V'};     % Diode forward voltage (> 0)
         Rd  = {1e-4,   'Ohm'};   % Diode on resistance
         Gd  = {1e-8,   '1/Ohm'}; % Diode off conductance
         iL0 = {0,      'A'};     % Initial inductor current

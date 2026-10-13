@@ -12,7 +12,8 @@ function S = setup_boost_simscape(mdl, ctrl, gains, P, opts)
 %                must be an integer, PWM edges are quantised to h)
 %     open_loop  [] (default, closed loop) or a fixed duty in [0 1]
 %     Pplant     plant parameters (L C rL rC Ron VF); switch Ron is at
-%                least 1e-3 ohm and Roff 1e6 ohm, diode Ron 1e-4 ohm
+%                least 1e-3 ohm and Roff 1e6 ohm, diode Ron 1e-4 ohm and
+%                Vf at least 1e-6 V (the Foundation Diode needs Vf > 0)
 %     fine_dec   decimation of the fine log 'yfine' (default 1 = every h)
 %   Variables written: CP X0 LP VP Ts N (as for boost_avg) and
 %   D0 (initial applied duty), h, Ron_sw, Roff_sw, cpk (carrier peak),
@@ -70,7 +71,7 @@ S.Lp = Pp.L;
 S.Cp = Pp.C;
 S.rLp = getf(Pp, 'rL', 0);
 S.rCp = max(getf(Pp, 'rC', 0), 1e-6);
-S.Vfp = getf(Pp, 'VF', 0);
+S.Vfp = max(getf(Pp, 'VF', 0), 1e-6);   % the Foundation Diode needs Vf > 0
 S.Rdp = 1e-4;
 S.Gdp = 1e-8;
 S.iL0p = getf(opts, 'iL0', 0);
