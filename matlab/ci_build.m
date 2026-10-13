@@ -7,6 +7,7 @@ function ci_build()
 %     2. copies saved for older releases -> models_R2021b/*.slx
 %     3. check_simulink_models       -> Simulink vs sim_boost vs Python traces
 %     4. check_simscape_block_params -> real Simscape parameter names (info)
+%     4b. build_boost_simscape + check_simscape_model -> boost_simscape.slx
 %     5. run_all_tests               -> the Octave-tested suite, now in MATLAB
 %   Output: ci_output/ci_build_log.txt (full log) and ci_output/ci_summary.txt.
 %   Errors at the end if a build, a model check or a test failed, so CI
@@ -96,6 +97,39 @@ catch err
     steps(end + 1, :) = {'check_simscape_block_params', true, ['skipped: ' err.message]};
 end
 
+% ---- 4b. Simscape power-stage model
+fprintf('\n==== 4b. boost_simscape (Simscape power stage)\n');
+print_foundation_ports();
+try
+    sfile = build_boost_simscape(here);
+    steps(end + 1, :) = {'build_boost_simscape', true, sfile};
+    try
+        old = fullfile(here, 'models_R2021b');
+        if bdIsLoaded('boost_simscape')
+            close_system('boost_simscape', 0);
+        end
+        load_system(sfile);
+        Simulink.exportToVersion('boost_simscape', fullfile(old, 'boost_simscape_R2021b.slx'), 'R2021b');
+        close_system('boost_simscape', 0);
+    catch err
+        fprintf('export boost_simscape R2021b skipped: %s\n', err.message);
+    end
+    try
+        RS = check_simscape_model(struct('folder', here));
+        np = sum([RS.pass]);
+        detail = sprintf('%d/%d rows pass', np, numel(RS));
+        for i = 1:numel(RS)
+            detail = sprintf('%s\n      %s %s: %s', detail, ternary(RS(i).pass, 'PASS', 'FAIL'), ...
+                RS(i).name, RS(i).detail);
+        end
+        steps(end + 1, :) = {'check_simscape_model', np == numel(RS), detail};
+    catch err
+        steps(end + 1, :) = {'check_simscape_model', false, report(err)};
+    end
+catch err
+    steps(end + 1, :) = {'build_boost_simscape', false, report(err)};
+end
+
 % ---- 5. test suite
 fprintf('\n==== 5. run_all_tests\n');
 try
@@ -125,6 +159,31 @@ fprintf(fid, '%s\n', txt);
 fclose(fid);
 if ~all([steps{:, 2}])
     error('ci_build:failed', 'ci_build: at least one step failed, see ci_output/ci_summary.txt');
+end
+end
+
+function print_foundation_ports()
+% declarations of the Foundation components used by boost_stage.ssc
+names = {'foundation.electrical.sources.controlled_voltage', 'foundation.electrical.sensors.current', ...
+    'foundation.electrical.sensors.voltage', 'foundation.electrical.elements.variable_resistor', ...
+    'foundation.electrical.elements.diode', 'foundation.electrical.elements.inductor', ...
+    'foundation.electrical.elements.capacitor', 'foundation.electrical.elements.reference'};
+for i = 1:numel(names)
+    p = which(names{i});
+    fprintf('  %s -> %s\n', names{i}, p);
+    if numel(p) > 4 && strcmp(p(end - 3:end), '.ssc')
+        txt = strsplit(fileread(p), sprintf('\n'));
+        n = 0;
+        for j = 1:numel(txt)
+            if ~isempty(regexp(txt{j}, '^\s*(inputs|outputs|nodes|variables)\b|^\s*\w+\s*=\s*(\{|foundation\.)', 'once'))
+                fprintf('      %s\n', strtrim(txt{j}));
+                n = n + 1;
+                if n >= 25
+                    break;
+                end
+            end
+        end
+    end
 end
 end
 

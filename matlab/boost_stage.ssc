@@ -1,0 +1,66 @@
+component boost_stage
+% Boost power stage (Simscape Foundation blocks)
+% Inputs:  Rsw switch resistance (Ron when ON, Roff when OFF),
+%          Rload load resistance, Vin input voltage.
+% Outputs: iL inductor current, vo output voltage at the load,
+%          io load current.  Node G is the circuit ground (connect the
+%          Solver Configuration block there).
+
+    inputs
+        Rsw   = {1e6, 'Ohm'};   % Rsw:left
+        Rload = {20,  'Ohm'};   % Rload:left
+        Vin   = {24,  'V'};     % Vin:left
+    end
+
+    outputs
+        iL = {0, 'A'};          % iL:right
+        vo = {0, 'V'};          % vo:right
+        io = {0, 'A'};          % io:right
+    end
+
+    nodes
+        g = foundation.electrical.electrical;   % G:right
+    end
+
+    parameters
+        L   = {500e-6, 'H'};     % Inductance
+        rL  = {0,      'Ohm'};   % Inductor series resistance (DCR)
+        C   = {470e-6, 'F'};     % Capacitance
+        rC  = {1e-6,   'Ohm'};   % Capacitor series resistance (ESR)
+        Vf  = {0,      'V'};     % Diode forward voltage
+        Rd  = {1e-4,   'Ohm'};   % Diode on resistance
+        Gd  = {1e-8,   '1/Ohm'}; % Diode off conductance
+        iL0 = {0,      'A'};     % Initial inductor current
+        vC0 = {24,     'V'};     % Initial capacitor voltage
+    end
+
+    components(ExternalAccess = observe)
+        vsrc    = foundation.electrical.sources.controlled_voltage;
+        sens_iL = foundation.electrical.sensors.current;
+        ind     = foundation.electrical.elements.inductor(l = L, r = rL, ...
+                      i_L = {value = iL0, priority = priority.high});
+        sw      = foundation.electrical.elements.variable_resistor;
+        dio     = foundation.electrical.elements.diode(Vf = Vf, Ron = Rd, Goff = Gd);
+        cap     = foundation.electrical.elements.capacitor(c = C, r = rC, ...
+                      vc = {value = vC0, priority = priority.high});
+        sens_io = foundation.electrical.sensors.current;
+        rl      = foundation.electrical.elements.variable_resistor;
+        sens_vo = foundation.electrical.sensors.voltage;
+        gnd     = foundation.electrical.elements.reference;
+    end
+
+    connections
+        connect(Vin, vsrc.vT);
+        connect(Rsw, sw.R);
+        connect(Rload, rl.R);
+        connect(vsrc.p, ind.p);
+        connect(ind.n, sens_iL.p);
+        connect(sens_iL.n, sw.p, dio.p);                    % switch node
+        connect(dio.n, cap.p, sens_io.p, sens_vo.p);        % output node
+        connect(sens_io.n, rl.p);
+        connect(vsrc.n, sw.n, cap.n, rl.n, sens_vo.n, gnd.V, g);
+        connect(sens_iL.I, iL);
+        connect(sens_io.I, io);
+        connect(sens_vo.V, vo);
+    end
+end
