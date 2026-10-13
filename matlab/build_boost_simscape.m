@@ -142,8 +142,10 @@ for i = 1:size(cp, 1)
     end
 end
 try
+    % enough nonlinear / mode iterations per step so that the diode turns
+    % off in the same step as the switch turns on (default 3 / 2)
     set_param([mdl '/Solver'], 'UseLocalSolver', 'on', 'LocalSolverChoice', 'NE_BACKWARD_EULER_ADVANCER', ...
-        'LocalSolverSampleTime', 'h', 'DoDC', 'off');
+        'LocalSolverSampleTime', 'h', 'DoDC', 'off', 'MaxNonlinIter', '20', 'MaxModeIter', '20');
 catch err
     nfail = nfail + 1;
     fprintf('  MANUAL STEP: Solver Configuration: local solver Backward Euler, sample time h (%s)\n', err.message);
