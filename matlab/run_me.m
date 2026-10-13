@@ -4,12 +4,14 @@
 %     1. puts this folder on the path (the MATLAB Function blocks call blk_*.m)
 %     2. uses boost_avg.slx / boost_cycle.slx from this folder, or builds them
 %        with build_boost_models if they are missing (older MATLAB than
-%        R2023b: use the copies in models_R2021b, see README section 4.2)
+%        R2023b: use the copies in models_R2021b, see the README "Start here")
 %     3. runs boost_avg for the controller below and checks it against the
 %        script simulation sim_boost (they must agree to ~1e-12)
 %     4. runs boost_cycle (exact switching plant, centre-aligned PWM) and
 %        shows the real switching ripple
-%     5. optionally runs the full validation check_simulink_models
+%     5. runs boost_simscape (Simscape circuit) if Simscape is installed
+%     6. optionally runs the full validation check_simulink_models /
+%        check_simscape_model
 %   Change the settings block to try another controller, gains or scenario.
 %   The README explains every option.
 
@@ -23,7 +25,8 @@ ctrl  = 'cascade_pi';      % 'fcsmpc' | 'cascade_pi' | 'cascade_pid' | 'smc' | '
 gains = [];                % [] = notebook baseline gains; e.g. [0.0530583 1.0]
 opts  = struct();          % [] / struct() = notebook (legacy) behaviour.  Corrected set-up:
 % opts = struct('ff_mode','measured','delay',1);   % + 'KPV',..,'KIV',.. for tuned outer gains
-run_full_check = false;    % true: also run check_simulink_models (a few minutes)
+run_simscape   = true;     % also run boost_simscape.slx when Simscape is installed
+run_full_check = false;    % true: also run check_simulink_models / check_simscape_model
 % ---------------------------------------------------------------------
 
 P = boost_params();
@@ -89,7 +92,35 @@ plot(t * 1e3, y(:, 2), t * 1e3, yc(:, 2), '--');
 ylabel('i_L (A)');
 xlabel('time (ms)');
 
-% 5. full validation (Simulink vs scripts vs Python traces)
+% 5. Simscape circuit (only if Simscape is installed): same controller,
+%    real inductor / switch / diode / capacitor, solver step 0.1 us
+if run_simscape && isfile(fullfile(here, 'boost_simscape.slx')) && ~isempty(ver('simscape'))
+    osc = opts;
+    if ~isfield(osc, 'delay') || isempty(osc.delay)
+        osc.delay = 1;                         % the circuit model has a fixed 1-sample delay
+    end
+    load_system('boost_simscape');
+    setup_boost_simscape('boost_simscape', ctrl, gains, P, osc);
+    ss = sim('boost_simscape');                % about 10 s for 100 ms
+    ys = ss.ylog;                              % [vo iL d IL_ref R Vin] at Ts
+    fine = squeeze(ss.yfine);                  % [iL vo] every 0.1 us
+    if size(fine, 2) ~= 2
+        fine = fine.';
+    end
+    tf = (0:size(fine, 1) - 1)' * P.Ts / 500;
+    fprintf('boost_simscape: Vo at 45-50 ms %.3f V mean, ripple %.3f V pk-pk\n', ...
+        mean(ys(k, 1)), ripple_from_waveform(tf, fine(:, 2), P.fs, [0.045 0.050]));
+    figure('Name', 'boost_simscape');
+    plot(tf * 1e3, fine(:, 2), t * 1e3, ys(:, 1), '.');
+    xlabel('time (ms)');
+    ylabel('V_o (V)');
+    legend('circuit (0.1 \mus)', 'sampled at k T_s', 'Location', 'best');
+end
+
+% 6. full validation (Simulink vs scripts vs Python traces)
 if run_full_check
     R = check_simulink_models(struct('folder', here));
+    if isfile(fullfile(here, 'boost_simscape.slx')) && ~isempty(ver('simscape'))
+        RS = check_simscape_model(struct('folder', here));
+    end
 end

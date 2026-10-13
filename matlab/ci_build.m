@@ -130,6 +130,17 @@ catch err
     steps(end + 1, :) = {'build_boost_simscape', false, report(err)};
 end
 
+% ---- 4c. the user entry script
+fprintf('\n==== 4c. run_me\n');
+try
+    run_me_in_isolation(here);
+    steps(end + 1, :) = {'run_me', true, 'ran without error'};
+catch err
+    steps(end + 1, :) = {'run_me', false, report(err)};
+end
+close all force;
+cd(here);
+
 % ---- 5. test suite
 fprintf('\n==== 5. run_all_tests\n');
 try
@@ -160,6 +171,11 @@ fclose(fid);
 if ~all([steps{:, 2}])
     error('ci_build:failed', 'ci_build: at least one step failed, see ci_output/ci_summary.txt');
 end
+end
+
+function run_me_in_isolation(here)
+% run the script in its own workspace (a function), as a user would
+run(fullfile(here, 'run_me.m'));
 end
 
 function print_foundation_ports()

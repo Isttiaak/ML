@@ -59,7 +59,7 @@ Stage 1   MATLAB scripts reproduce the Python numbers          minutes
 Stage 2   Simulink model boost_avg reproduces Stage 1           1 command, or ~1 h by hand
 Stage 3   MOPSO tuning with the corrected method                 minutes (MATLAB), ~20 min (Octave)
 Stage 4a  boost_cycle: exact switching plant, no Simscape        1 command
-Stage 4b  Simscape Electrical circuit                            half a day
+Stage 4b  Simscape Electrical circuit                            ready-made, or half a day by hand
 Stage 5   Robustness battery, LaTeX table, figures               minutes
 ```
 
@@ -371,45 +371,85 @@ By hand, `boost_cycle` is `boost_avg` with five changes:
 
 ## 7. Stage 4b: Simscape Electrical
 
-Build it as a separate model, `boost_simscape.slx`. Copy the control side from `boost_avg`: `Scenario`, `k`, `Controller`, `xc`, `noise`, the `truth` Mux and the loggers. Replace the plant (`Plant`, `xp`, `xpDemux`, `io`) with a circuit.
+### 7.0 The ready-made model: `boost_simscape.slx`
+
+It's the same control side as `boost_avg`: `Scenario`, `k`, `Controller`, `xc` and `noise`, with the same `CP` parameter vector. The plant is a real circuit:
+
+- **Power stage**: one Simscape Component block, `PowerStage`, defined in `boost_stage.ssc` and built from Simscape Foundation library components:
+  - controlled voltage source (Vin);
+  - inductor (with DCR), initial current set with priority High;
+  - variable resistor as the switch (1 mΩ ON / 1 MΩ OFF);
+  - Foundation **Diode** (`foundation.electrical.elements.pwl_diode`: Vf, Ron, Goff);
+  - capacitor (with ESR), initial voltage set with priority High;
+  - variable-resistor load;
+  - current and voltage sensors.
+
+  Writing the circuit as a component file makes every connection explicit (`connect(...)` by terminal name), so there is nothing to wire wrongly by hand.
+- **Modulator**: centre-aligned carrier (Repeating Sequence) and a comparator that switches the switch resistance.
+- **Sampling**: Zero-Order Holds at t = k·Ts, i.e. the carrier valley, the middle of the ON pulse.
+- **Delay**: a Unit Delay on the duty (IC `D0`), the DSP's one-sample latency.
+- **Open-loop switch**: `OL`/`d_ol` let you apply a fixed duty instead of the controller output.
+- **Solver**: Simscape local solver Backward Euler, step h = Ts/500 = 0.1 µs; global fixed-step discrete, step h.
+
+Run it:
+```matlab
+P = boost_params();
+load_system('boost_simscape');
+setup_boost_simscape('boost_simscape', 'cascade_pi', g, P, ...
+    struct('ff_mode','measured','delay',1,'KPV',gt.KPV,'KIV',gt.KIV));   % g, gt as in Stage 4a
+so   = sim('boost_simscape');          % about 8 s for 100 ms on a GitHub runner
+y    = so.ylog;                        % [vo iL d IL_ref R Vin] at Ts
+fine = so.yfine;                       % [iL vo] every 0.1 us (the switching waveform)
+```
+`setup_boost_simscape` takes the same options as `sim_boost`, plus `h`, `open_loop` (a fixed duty), `Pplant` (L, C, DCR, ESR, switch Ron, diode Vf) and `fine_dec`. The total delay is `opts.delay` (at least 1, because the Unit Delay is in the model). Compare with `sim_boost(..., 'plant','switched','pwm','center','delay',1)`.
+
+**Validated on MATLAB R2023b** (`check_simscape_model`, run by CI):
+
+| Check | Result |
+|---|---|
+| open loop, d = 0.5, 20 Ω: inductor ripple | 1.2004 A vs 1.1998 A (exact plant), 1.2000 A analytic |
+| open loop: output ripple | 0.1281 V vs 0.1276 V (exact plant) |
+| open loop: period samples vs `plant_switched_step` | max 4.5 mA, 3.1 mV |
+| closed loop, cascade PI (notebook gains), measured feed-forward, delay 1 | within 0.042 V / 0.036 A of `sim_boost` switched |
+| closed loop, FCS-MPC | mean Vo within 0.34 V; the switching patterns differ edge by edge, as expected for MPC |
+
+To rebuild it: `build_boost_simscape`.
+
+The rest of this section is the hand-built route, if you'd rather put the blocks down yourself.
 
 ### Step 1: check the block names on your release
 
 ```matlab
 info = check_simscape_block_params();
 ```
-It adds each block below to a scratch model and prints the library path that worked, plus the real parameter names and values. Trust its output over this table when they differ.
+It adds each block to a scratch model and prints the library path that worked, plus the real parameter names and values. On R2023b it printed the names used in the table below.
 
 ### Step 2: the power stage
 
-| Block | Library | "Ideal" check (to compare with the scripts) | Realistic runs |
-|---|---|---|---|
-| Controlled Voltage Source | Simscape > Foundation Library > Electrical > Electrical Sources | input = Vin from `Scenario` via Simulink-PS Converter (unit V) | same |
-| Inductor | Simscape > Foundation Library > Electrical > Electrical Elements | 500e-6 H, series resistance 0; Initial Targets: current 0 A, **priority High** | series resistance 0.05 Ω |
-| Current Sensor (iL) | Simscape > Foundation Library > Electrical > Electrical Sensors | in series with the inductor | same |
-| Ideal Semiconductor Switch | Simscape > Electrical > Semiconductors & Converters | On-state resistance 1e-3 Ω, Off-state conductance 1e-6, **Threshold voltage 0.5**, Integral protection diode None | Ron 0.02 Ω |
-| Diode | Simscape > Foundation Library > Electrical > Electrical Elements | **Forward voltage 0, On resistance 1e-4 Ω**, Off conductance 1e-8 (the 0.6 V / 0.3 Ω defaults are far too lossy) | 0.7 V, 0.02 Ω |
-| Capacitor | Electrical Elements | 470e-6 F, series resistance 0; Initial Targets: voltage 24 V, **priority High** | ESR 0.02 Ω |
-| Current Sensor (io) | Electrical Sensors | in series with the load | same |
-| Variable Resistor (load) | Electrical Elements | input = R from `Scenario` via Simulink-PS (unit Ohm); Minimum resistance 0.1 Ω | same |
-| Voltage Sensor ×2 | Electrical Sensors | Vo across the output (load side, so ESR is included as in `sim_boost`), Vin across the source | same |
-| Electrical Reference | Electrical Elements | one | same |
-| Solver Configuration | Simscape > Utilities | see Step 5 | same |
-| Simulink-PS / PS-Simulink Converter | Simscape > Utilities | units V, A, Ohm; **no input filtering on the gate signal** | same |
+| Block | Library path (R2023b) | Parameter names | "Ideal" check (to compare with the scripts) | Realistic runs |
+|---|---|---|---|---|
+| Controlled Voltage Source | `fl_lib/Electrical/Electrical Sources/Controlled Voltage Source` | input port vT | Vin from `Scenario` via Simulink-PS Converter (unit V) | same |
+| Inductor | `fl_lib/Electrical/Electrical Elements/Inductor` | `l`, `r` (series), `i_L` (initial current, priority High) | 500e-6 H, r = 0, i_L = 0 A | r = 0.05 Ω |
+| Current Sensor | `fl_lib/Electrical/Electrical Sensors/Current Sensor` | output I | in series with the inductor, and one with the load | same |
+| Ideal Semiconductor Switch | `ee_lib/Semiconductors & Converters/Ideal Semiconductor Switch` | `Ron`, `Goff`, `Vth` (default 0.5), `diode_param` (keep None) | Ron 1e-3 Ω, Goff 1e-6 | Ron 0.02 Ω |
+| Diode | `fl_lib/Electrical/Electrical Elements/Diode` | `Vf`, `Ron`, `Goff` | **Vf = 0, Ron = 1e-4 Ω**, Goff 1e-8 (the 0.6 V / 0.3 Ω defaults are far too lossy) | 0.7 V, 0.02 Ω |
+| Capacitor | `fl_lib/Electrical/Electrical Elements/Capacitor` | `c`, `r` (ESR, default 1e-6), `vc` (initial voltage, priority High) | 470e-6 F, vc = 24 V | ESR 0.02 Ω |
+| Variable Resistor (load) | `fl_lib/Electrical/Electrical Elements/Variable Resistor` | input R, `Rmin` | R from `Scenario` via Simulink-PS (unit Ohm), Rmin 0.1 Ω | same |
+| Voltage Sensor ×2 | `fl_lib/Electrical/Electrical Sensors/Voltage Sensor` | output V | Vo across the load (ESR included, as in `sim_boost`), Vin across the source | same |
+| Electrical Reference | `fl_lib/Electrical/Electrical Elements/Electrical Reference` | | one | same |
+| Solver Configuration | `nesl_utility/Solver Configuration` | `UseLocalSolver`, `LocalSolverChoice`, `LocalSolverSampleTime`, `DoDC`, `MaxNonlinIter`, `MaxModeIter` | see Step 5 | same |
+| Simulink-PS / PS-Simulink Converter | `nesl_utility/Simulink-PS Converter`, `nesl_utility/PS-Simulink Converter` | `Unit`; Simulink-PS also `FilteringAndDerivatives` (keep `provide`, no filter on the gate) | V, A, Ohm | same |
 
-Wiring: source + → inductor → iL sensor → switch node. Switch node → switch → ground. Switch node → diode anode, diode cathode → output node. Output node → capacitor → ground. Output node → io sensor → variable resistor → ground. Connect the Electrical Reference and the Solver Configuration to the circuit.
+Wiring: source + → inductor → iL sensor → switch node. Switch node → switch → ground. Switch node → diode anode, diode cathode → output node. Output node → capacitor → ground. Output node → io sensor → load → ground. Connect the Electrical Reference and the Solver Configuration to the circuit. `boost_stage.ssc` is exactly this circuit written as code, so read it if a connection is unclear.
 
 ### Step 3: PWM, centre-aligned
 
-- PWM Generator (Simscape > Electrical > Control > Pulse Width Modulation):
-  - **Carrier counter: Up-down.**
-  - Set its timing so one PWM period is 50 µs. The docs give *Timer period* = half the PWM period for up-down, i.e. 25e-6.
-  - Sample time = your solver step.
-- Gate output → Simulink-PS Converter → switch gate G.
-- **Check it on a scope before going further.** With a constant duty of 0.2, the gate must be high for the first 5 µs and the last 5 µs of every 50 µs period, i.e. centred on t = k·Ts.
-- If it's centred on (k+½)·Ts instead, use this unambiguous fallback:
-  - carrier: Repeating Sequence with Time values `[0 Ts/2 Ts]` and Output values `[0 1 0]`;
-  - gate: Relational Operator `duty > carrier`, zero-crossing detection on.
+- The *PWM Generator* was **not** found at the documented library path on R2023b (`check_simscape_block_params` reported it missing). Use the carrier below; it has no ambiguity:
+  - carrier: Repeating Sequence with **Time values `[0 h/2 Ts/2+h/2 Ts]`** and **Output values `[cpk*h/Ts 0 cpk cpk*h/Ts]`**, where `cpk = 1 - 1e-9` and `h` is the solver step;
+  - gate: `d - carrier > 0` (a Sum and a Switch block in `boost_simscape`; a Relational Operator works too).
+- **The half-step shift matters.** Compared at the solver-step instants, a plain `[0 Ts/2 Ts]` / `[0 1 0]` triangle counts both pulse edges and gives one extra step per period. That's duty +h/Ts = +0.002, which put Vo **0.19 V** too high in the first CI run. Shifted by h/2, each step is decided at its midpoint and the error is unbiased (±½ step).
+- `cpk` slightly below 1 keeps a gate of exactly 1 (FCS-MPC) ON for the whole period.
+- **Check it on a scope.** With a constant duty of 0.2 the gate must be high for the first 5 µs and the last 5 µs of every 50 µs period, i.e. centred on t = k·Ts.
 
 Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON pulse, which in CCM is the average inductor current. That's what the controllers assume, and what `sim_boost(..., 'pwm','center')` models.
 
@@ -433,7 +473,7 @@ Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON p
 
 | Where | Setting | Value |
 |---|---|---|
-| Solver Configuration | Use local solver | on |
+| Solver Configuration | Use local solver | on (the ready-made model also raises MaxNonlinIter / MaxModeIter to 20) |
 | | Solver type | Backward Euler (Trapezoidal rings after switching events) |
 | | Sample time | `1e-7` (Ts/1e-7 = 500; must be an integer) |
 | | Start simulation from steady state | **off**: you want the start-up, and Partitioning errors with it on |
@@ -448,6 +488,8 @@ Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON p
 **Speed.** Once it works, try Solver type = **Partitioning**, which is usually faster on switched-linear circuits. If it rejects the Variable Resistor, model the load step as a fixed 20 Ω resistor in parallel with 20 Ω + a Foundation Switch closed at 50 ms.
 
 ### Step 6: validate, in this order
+
+For the ready-made `boost_simscape.slx` these checks are automated: `check_simscape_model` (results in 7.0). For a hand-built model:
 
 1. **Open loop against the exact plant.** Save a copy of the power stage as `boost_ss_openloop.slx`:
    - the duty comes from root Inport 1, with the Inport's **Sample time = Ts** (5e-5), so each period's duty is held;
