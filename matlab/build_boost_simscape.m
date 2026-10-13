@@ -19,7 +19,8 @@ function file = build_boost_simscape(folder, bopts)
 %     Controller     blk_controller (same code as boost_avg)
 %     dly            Unit Delay (IC D0): one-sample DSP latency, breaks the loop
 %     dsel           open-loop override (OL = 1 -> fixed duty d_ol)
-%     carrier        triangle 0 -> cpk -> 0 over Ts (valley at k*Ts)
+%     carrier        triangle 0 -> cpk -> 0 over Ts (valley at k*Ts, shifted by
+%                    h/2 so each solver step is gated at its midpoint)
 %     gate           Rsw = Ron_sw while d > carrier, else Roff_sw
 %   Logs: ylog [vo iL d IL_ref R Vin] and ymeas at Ts; yfine [iL vo] at h
 %   (for the switching ripple).  Workspace: setup_boost_simscape.
@@ -83,8 +84,14 @@ add_block('simulink/Signal Routing/Switch', [mdl '/dsel'], ...
     'Criteria', 'u2 > Threshold', 'Threshold', '0.5', 'Position', [1330 60 1370 180]);
 
 % ---- modulator: centre-aligned carrier and switch resistance
+% triangle with its valley at k*Ts, shifted by half a solver step: the
+% gate of each solver step is then decided at the step midpoint, so the ON
+% time is d*Ts quantised to +/- h/2 without bias (comparing at the step
+% instants counts both edges and gives one extra step per period, i.e.
+% d + h/Ts, about +0.19 V on Vo at h = Ts/500)
 add_block('simulink/Sources/Repeating Sequence', [mdl '/carrier'], ...
-    'rep_seq_t', '[0 Ts/2 Ts]', 'rep_seq_y', '[0 cpk 0]', 'Position', [1330 230 1370 260]);
+    'rep_seq_t', '[0 h/2 Ts/2+h/2 Ts]', 'rep_seq_y', '[cpk*h/Ts 0 cpk cpk*h/Ts]', ...
+    'Position', [1330 230 1370 260]);
 add_block('simulink/Math Operations/Sum', [mdl '/dmc'], ...
     'Inputs', '+-', 'Position', [1420 140 1450 170]);
 add_block('simulink/Sources/Constant', [mdl '/Ron'], ...
