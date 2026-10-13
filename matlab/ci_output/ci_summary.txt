@@ -4,11 +4,15 @@ PASS export boost_avg R2021b            /home/runner/work/ML/ML/matlab/models_R2
 PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2021b/boost_cycle_R2021b.slx
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
-PASS build_boost_simscape               /home/runner/work/ML/ML/matlab/boost_simscape.slx
-PASS check_simscape_model               5/5 rows pass
-      PASS (s1) open loop iL ripple vs exact plant: 1.2004 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 2.1 s sim)
-      PASS (s1) open loop Vo ripple vs exact plant: 0.1281 V vs 0.1276 V (analytic Io*d*Ts/C 0.1276 V), mean Vo 47.991 V
-      PASS (s1) open loop samples vs plant_switched_step: max|diL| 0.00448 A, max|dVo| 0.00311 V
-      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0418 V, max|diL| 0.0356 A, |dmean Vo| 40-50 ms 0.0265 V (7.6 s sim)
-      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (7.0 s sim)
+FAIL build_boost_simscape               boost_simscape: 1 build step(s) failed
+        at build_boost_simscape line 261
+        at ci_build line 104
+        at command_46b4900d_a10f_4d38_afcb_f2fd5ace6057 line 1
+FAIL run_me                             Error compiling Simscape network for model boost_simscape.
+        at run_me line 104
+        at run line 99
+        at run_me_in_isolation line 178
+        at ci_build line 136
+        at command_46b4900d_a10f_4d38_afcb_f2fd5ace6057 line 1
+        cause: ['boost_simscape/PowerStage']: Diode forward voltage must be greater than zero.
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
