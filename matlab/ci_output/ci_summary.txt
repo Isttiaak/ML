@@ -4,9 +4,11 @@ PASS export boost_avg R2021b            /home/runner/work/ML/ML/matlab/models_R2
 PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2021b/boost_cycle_R2021b.slx
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
-FAIL build_boost_simscape               could not point the Simscape Component block to boost_stage (['boost_simscape/PowerStage']: Parameter check for block 'boost_simscape/PowerStage' failed.)
-        at add_comp line 282
-        at build_boost_simscape line 101
-        at ci_build line 104
-        at command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 line 1
+PASS build_boost_simscape               /home/runner/work/ML/ML/matlab/boost_simscape.slx
+FAIL check_simscape_model               3/5 rows pass
+      PASS (s1) open loop iL ripple vs Vin*d*Ts/L: 1.2358 A vs 1.2000 A (3.8 s sim)
+      FAIL (s1) open loop Vo ripple vs Io*d*Ts/C: 0.1794 V vs 0.1281 V
+      FAIL (s1) open loop samples vs plant_switched_step: max|diL| 0.216 A, max|dVo| 0.356 V
+      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (12.0 s sim)
+      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.4 s sim)
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP

@@ -14,7 +14,7 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In ci_build (line 44)
-In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
+In command_0b7d200f_9c05_4650_b053_70553f8186f4 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
@@ -28,7 +28,7 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In ci_build (line 44)
-In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
+In command_0b7d200f_9c05_4650_b053_70553f8186f4 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -50,7 +50,7 @@ problems.]
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
 In ci_build (line 78)
-In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
+In command_0b7d200f_9c05_4650_b053_70553f8186f4 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
@@ -65,7 +65,7 @@ problems.]
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
 In ci_build (line 78)
-In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
+In command_0b7d200f_9c05_4650_b053_70553f8186f4 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -500,6 +500,9 @@ library nesl_utility  loaded
 Use these names with set_param(blk, name, value); unit parameters end in _unit.
 
 ==== 4b. boost_simscape (Simscape power stage)
+  fl_lib/Electrical/Electrical Elements/Diode: ComponentPath = foundation.electrical.elements.pwl_diode
+  ee_lib/Semiconductors & Converters/Diode: ComponentPath = ee.semiconductors.diode
+  ee_lib/Semiconductors & Converters/Ideal Semiconductor Switch: ComponentPath = ee.semiconductors.ideal.semiconductor_switch
   foundation.electrical.sources.controlled_voltage -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+sources/controlled_voltage.ssc
       vT = { 0, 'V' }; % :bottom
       p = foundation.electrical.electrical; % :top
@@ -541,32 +544,79 @@ Use these names with set_param(blk, name, value); unit parameters end in _unit.
       V = foundation.electrical.electrical; % :top
 
 === building boost_simscape (Simscape power stage) ===
+  set_param(ComponentPath) failed: SimscapeComponentBlock block (mask) does not have a parameter named 'ComponentPath'
+  PowerStage: SourceFile = boost_stage
+  PowerStage ports: 3 left (LConn), 4 right (RConn)
+    port LConn1   at [446 155]
+    port LConn2   at [446 215]
+    port LConn3   at [446 275]
+    port RConn1   at [654 145]
+    port RConn2   at [654 190]
+    port RConn3   at [654 235]
+    port RConn4   at [654 280]
+  model workspace assigned (cascade_pi, N = 2000, h = 1e-07)
+  saved /home/runner/work/ML/ML/matlab/boost_simscape.slx
+  update diagram (Ctrl+D): OK
+  boost_simscape: built without manual steps
+Export successful: '<a href="matlab:uiopen('/home/runner/work/ML/ML/matlab/models_R2021b/boost_simscape_R2021b.slx', true)">/home/runner/work/ML/ML/matlab/models_R2021b/boost_simscape_R2021b.slx</a>' created for use in Simulink R2021b.
+
+=== building boost_simscape (Simscape power stage) ===
+[Warning: The model name 'boost_simscape' is shadowing another name in the
+MATLAB workspace or path. Type "which -all boost_simscape" at the command line
+to find the other uses of this name. You should change the name of the model to
+avoid problems.] 
+[> In build_boost_simscape (line 60)
+In check_simscape_model (line 25)
+In ci_build (line 118)
+In command_0b7d200f_9c05_4650_b053_70553f8186f4 (line 1)] 
+  set_param(ComponentPath) failed: SimscapeComponentBlock block (mask) does not have a parameter named 'ComponentPath'
+  PowerStage: SourceFile = boost_stage
+  PowerStage ports: 3 left (LConn), 4 right (RConn)
+    port LConn1   at [446 155]
+    port LConn2   at [446 215]
+    port LConn3   at [446 275]
+    port RConn1   at [654 145]
+    port RConn2   at [654 190]
+    port RConn3   at [654 235]
+    port RConn4   at [654 280]
+  model workspace assigned (cascade_pi, N = 2000, h = 1e-07)
+  saved /home/runner/work/ML/ML/matlab/boost_simscape.slx
+  update diagram (Ctrl+D): OK
+  boost_simscape: built without manual steps
+
+RES   CHECK                                                     DETAIL
+PASS  (s1) open loop iL ripple vs Vin*d*Ts/L                    1.2358 A vs 1.2000 A (3.8 s sim)
+FAIL  (s1) open loop Vo ripple vs Io*d*Ts/C                     0.1794 V vs 0.1281 V
+FAIL  (s1) open loop samples vs plant_switched_step             max|diL| 0.216 A, max|dVo| 0.356 V
+PASS  (s2) closed loop cascade_pi vs sim_boost switched         max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (12.0 s sim)
+PASS  (s3) closed loop fcsmpc vs sim_boost switched             max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.4 s sim)
+3 of 5 checks passed (boost_simscape)
 
 ==== 5. run_all_tests
 ==== test_core_equivalence
-==== test_core_equivalence: PASS (0.6 s)
+==== test_core_equivalence: PASS (0.9 s)
 ==== test_metrics_event
 ==== test_metrics_event: PASS (0.1 s)
 ==== test_mopso
-==== test_mopso: PASS (1.9 s)
+==== test_mopso: PASS (2.0 s)
 ==== test_switched_plant
 ==== test_switched_plant: PASS (0.7 s)
 ==== test_centre_pwm
-==== test_centre_pwm: PASS (1.0 s)
+==== test_centre_pwm: PASS (1.4 s)
 ==== test_simulink_blocks
-==== test_simulink_blocks: PASS (0.8 s)
+==== test_simulink_blocks: PASS (1.5 s)
 ==== test_drivers
-==== test_drivers: PASS (6.7 s)
+==== test_drivers: PASS (8.8 s)
 
 test                       state  time[s]  message
-test_core_equivalence      PASS       0.6  
+test_core_equivalence      PASS       0.9  
 test_metrics_event         PASS       0.1  
-test_mopso                 PASS       1.9  
+test_mopso                 PASS       2.0  
 test_switched_plant        PASS       0.7  
-test_centre_pwm            PASS       1.0  
-test_simulink_blocks       PASS       0.8  
-test_drivers               PASS       6.7  
-7 passed, 0 failed, 0 skipped (11.8 s)
+test_centre_pwm            PASS       1.4  
+test_simulink_blocks       PASS       1.5  
+test_drivers               PASS       8.8  
+7 passed, 0 failed, 0 skipped (15.5 s)
 
 ci_build summary (MATLAB 23.2.0.3097123 (R2023b) Update 11)
 PASS build_boost_models                 /home/runner/work/ML/ML/matlab/boost_avg.slx, /home/runner/work/ML/ML/matlab/boost_cycle.slx
@@ -574,9 +624,11 @@ PASS export boost_avg R2021b            /home/runner/work/ML/ML/matlab/models_R2
 PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2021b/boost_cycle_R2021b.slx
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
-FAIL build_boost_simscape               could not point the Simscape Component block to boost_stage (['boost_simscape/PowerStage']: Parameter check for block 'boost_simscape/PowerStage' failed.)
-        at add_comp line 282
-        at build_boost_simscape line 101
-        at ci_build line 104
-        at command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 line 1
+PASS build_boost_simscape               /home/runner/work/ML/ML/matlab/boost_simscape.slx
+FAIL check_simscape_model               3/5 rows pass
+      PASS (s1) open loop iL ripple vs Vin*d*Ts/L: 1.2358 A vs 1.2000 A (3.8 s sim)
+      FAIL (s1) open loop Vo ripple vs Io*d*Ts/C: 0.1794 V vs 0.1281 V
+      FAIL (s1) open loop samples vs plant_switched_step: max|diL| 0.216 A, max|dVo| 0.356 V
+      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (12.0 s sim)
+      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.4 s sim)
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
