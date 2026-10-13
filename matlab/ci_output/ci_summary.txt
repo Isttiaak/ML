@@ -5,10 +5,10 @@ PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
 PASS build_boost_simscape               /home/runner/work/ML/ML/matlab/boost_simscape.slx
-FAIL check_simscape_model               3/5 rows pass
-      PASS (s1) open loop iL ripple vs Vin*d*Ts/L: 1.2358 A vs 1.2000 A (3.8 s sim)
-      FAIL (s1) open loop Vo ripple vs Io*d*Ts/C: 0.1794 V vs 0.1281 V
+FAIL check_simscape_model               2/5 rows pass
+      FAIL (s1) open loop iL ripple vs exact plant: 1.2372 A vs 1.1998 A (analytic Vin*d*Ts/L 1.2000 A; 3.0 s sim)
+      FAIL (s1) open loop Vo ripple vs exact plant: 0.1824 V vs 0.1276 V (analytic Io*d*Ts/C 0.1280 V), mean Vo 48.146 V
       FAIL (s1) open loop samples vs plant_switched_step: max|diL| 0.216 A, max|dVo| 0.356 V
-      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (12.0 s sim)
-      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.4 s sim)
+      PASS (s2) closed loop cascade_pi vs sim_boost switched: max|dVo| 0.0597 V, max|diL| 0.0334 A, |dmean Vo| 40-50 ms 0.00433 V (11.9 s sim)
+      PASS (s3) closed loop fcsmpc vs sim_boost switched: max|dVo| 2.24 V, max|diL| 9.37 A, |dmean Vo| 40-50 ms 0.337 V (11.3 s sim)
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
