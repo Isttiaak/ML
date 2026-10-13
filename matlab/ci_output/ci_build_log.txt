@@ -7,12 +7,28 @@ ci_build on MATLAB 23.2.0.3097123 (R2023b) Update 11
 ==== 1. build_boost_models
 
 === building boost_avg (averaged plant) ===
+[Warning: The model name 'boost_avg' is shadowing another name in the MATLAB
+workspace or path. Type "which -all boost_avg" at the command line to find the
+other uses of this name. You should change the name of the model to avoid
+problems.] 
+[> In build_boost_models>build_one (line 121)
+In build_boost_models (line 96)
+In ci_build (line 44)
+In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
   boost_avg: built without manual steps
 
 === building boost_cycle (switched plant) ===
+[Warning: The model name 'boost_cycle' is shadowing another name in the MATLAB
+workspace or path. Type "which -all boost_cycle" at the command line to find
+the other uses of this name. You should change the name of the model to avoid
+problems.] 
+[> In build_boost_models>build_one (line 121)
+In build_boost_models (line 96)
+In ci_build (line 44)
+In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -33,8 +49,8 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
-In ci_build (line 77)
-In command_88c1f5ac_1bbb_49c3_bb3d_64f94cda2705 (line 1)] 
+In ci_build (line 78)
+In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_avg.slx
   update diagram (Ctrl+D): OK
@@ -48,8 +64,8 @@ problems.]
 [> In build_boost_models>build_one (line 121)
 In build_boost_models (line 96)
 In check_simulink_models (line 100)
-In ci_build (line 77)
-In command_88c1f5ac_1bbb_49c3_bb3d_64f94cda2705 (line 1)] 
+In ci_build (line 78)
+In command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 (line 1)] 
   model workspace: CP X0 LP VP PP XP0 Ts N assigned (cascade_pi, N = 2000)
   saved /home/runner/work/ML/ML/matlab/boost_cycle.slx
   update diagram (Ctrl+D): OK
@@ -483,31 +499,74 @@ library nesl_utility  loaded
 
 Use these names with set_param(blk, name, value); unit parameters end in _unit.
 
+==== 4b. boost_simscape (Simscape power stage)
+  foundation.electrical.sources.controlled_voltage -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+sources/controlled_voltage.ssc
+      vT = { 0, 'V' }; % :bottom
+      p = foundation.electrical.electrical; % :top
+      n = foundation.electrical.electrical; % :bottom
+      i = { 0, 'A' };
+      v = { 0, 'V' };
+  foundation.electrical.sensors.current -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+sensors/current.ssc
+      I = { 0.0, 'A' }; % I:right
+      p = foundation.electrical.electrical; % +:left
+      n = foundation.electrical.electrical; % -:right
+      i1 = { 0, 'A' }; % Current
+  foundation.electrical.sensors.voltage -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+sensors/voltage.ssc
+      V = { 0.0, 'V' }; % V:bottom
+      p = foundation.electrical.electrical; % +:top
+      n = foundation.electrical.electrical; % -:bottom
+  foundation.electrical.elements.variable_resistor -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+elements/variable_resistor.ssc
+      R = { 0.0, 'Ohm' }; % R:left
+      p = foundation.electrical.electrical; % +:left
+      n = foundation.electrical.electrical; % -:right
+      H = foundation.thermal.thermal; % H:top
+      Rmin = { 0, 'Ohm' }; % Minimum resistance R>=0
+      thermal_mass = {1, 'J/K'}; % Thermal mass
+      i = { 0, 'A' }; % Current
+      v = { 0, 'V' }; % Voltage
+      T = {300, 'K'}; % Temperature
+      Q = { 0, 'W' }; % Heat flow into junction
+  foundation.electrical.elements.diode -> 
+  foundation.electrical.elements.inductor -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+elements/inductor.ssc
+      l  = { 1e-6, 'H' };     % Inductance
+      r  = { 0, 'Ohm' };      % Series resistance
+      g  = { 1e-9, '1/Ohm' }; % Parallel conductance
+      i_L = {value = { 0, 'A' }, priority = priority.high}; % Inductor current
+  foundation.electrical.elements.capacitor -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+elements/capacitor.ssc
+      c  = { 1e-6, 'F' };   % Capacitance
+      r  = { 1e-6, 'Ohm' }; % Series resistance
+      g  = { 0, '1/Ohm' };  % Parallel conductance
+      vc = {value = { 0, 'V' }, priority = priority.high}; % Capacitor voltage
+  foundation.electrical.elements.reference -> /opt/hostedtoolcache/MATLAB/2023.2.999/x64/toolbox/physmod/simscape/library/m/+foundation/+electrical/+elements/reference.ssc
+      V = foundation.electrical.electrical; % :top
+
+=== building boost_simscape (Simscape power stage) ===
+
 ==== 5. run_all_tests
 ==== test_core_equivalence
-==== test_core_equivalence: PASS (1.1 s)
+==== test_core_equivalence: PASS (0.6 s)
 ==== test_metrics_event
 ==== test_metrics_event: PASS (0.1 s)
 ==== test_mopso
-==== test_mopso: PASS (3.7 s)
+==== test_mopso: PASS (1.9 s)
 ==== test_switched_plant
-==== test_switched_plant: PASS (1.3 s)
+==== test_switched_plant: PASS (0.7 s)
 ==== test_centre_pwm
-==== test_centre_pwm: PASS (2.4 s)
+==== test_centre_pwm: PASS (1.0 s)
 ==== test_simulink_blocks
-==== test_simulink_blocks: PASS (2.3 s)
+==== test_simulink_blocks: PASS (0.8 s)
 ==== test_drivers
-==== test_drivers: PASS (13.1 s)
+==== test_drivers: PASS (6.7 s)
 
 test                       state  time[s]  message
-test_core_equivalence      PASS       1.1  
+test_core_equivalence      PASS       0.6  
 test_metrics_event         PASS       0.1  
-test_mopso                 PASS       3.7  
-test_switched_plant        PASS       1.3  
-test_centre_pwm            PASS       2.4  
-test_simulink_blocks       PASS       2.3  
-test_drivers               PASS      13.1  
-7 passed, 0 failed, 0 skipped (24.1 s)
+test_mopso                 PASS       1.9  
+test_switched_plant        PASS       0.7  
+test_centre_pwm            PASS       1.0  
+test_simulink_blocks       PASS       0.8  
+test_drivers               PASS       6.7  
+7 passed, 0 failed, 0 skipped (11.8 s)
 
 ci_build summary (MATLAB 23.2.0.3097123 (R2023b) Update 11)
 PASS build_boost_models                 /home/runner/work/ML/ML/matlab/boost_avg.slx, /home/runner/work/ML/ML/matlab/boost_cycle.slx
@@ -515,4 +574,9 @@ PASS export boost_avg R2021b            /home/runner/work/ML/ML/matlab/models_R2
 PASS export boost_cycle R2021b          /home/runner/work/ML/ML/matlab/models_R2021b/boost_cycle_R2021b.slx
 PASS check_simulink_models              38/38 rows pass
 PASS check_simscape_block_params        printed in the log
+FAIL build_boost_simscape               could not point the Simscape Component block to boost_stage (['boost_simscape/PowerStage']: Parameter check for block 'boost_simscape/PowerStage' failed.)
+        at add_comp line 282
+        at build_boost_simscape line 101
+        at ci_build line 104
+        at command_4435c71f_dfe7_4f1f_a2f4_e2d71ccc9f33 line 1
 PASS run_all_tests                      7 PASS, 0 FAIL, 0 SKIP
