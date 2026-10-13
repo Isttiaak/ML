@@ -32,8 +32,10 @@ function S = setup_boost_workspace(mdl, ctrl, gains, P, opts)
 %   mdl is given and opts.plant is missing it is taken from the model
 %   (boost_cycle has a To Workspace block 'yenv').  A mismatch is an error
 %   because XP0 has 2 or 3 elements.
-%   Noise is NOT stored in the model workspace: it enters through the root
-%   Inport 'noise' (sim_boost_simulink passes S.noise with setExternalInput).
+%   Noise normally enters through the root Inport 'noise' (sim_boost_simulink
+%   passes S.noise with setExternalInput).  If the model has no root Inport
+%   (Inport replaced by n = blk_noise_lookup(k, NZ)), NZ = S.noise (4 x N) is
+%   written to the model workspace as well.
 %   Simulink part UNTESTED here (no MATLAB); the mdl = '' path is tested in
 %   Octave against emu_model_vars and sim_boost.
 
@@ -169,12 +171,16 @@ if ~isempty(act)
     end
 end
 S.has_noise = ~isempty(act);
+S.NZ = S.noise;    % parameter of the optional blk_noise_lookup block
 
 % ---- write to the model workspace
 S.assigned = false;
 if ~isempty(mdl)
     mws = get_param(mdl, 'ModelWorkspace');
     names = {'CP', 'X0', 'LP', 'VP', 'PP', 'XP0', 'Ts', 'N'};
+    if uses_noise_lookup(mdl)
+        names{end + 1} = 'NZ';
+    end
     for i = 1:numel(names)
         assignin(mws, names{i}, S.(names{i}));
     end
@@ -186,6 +192,15 @@ end
 function ensure_loaded(mdl)
 if ~bdIsLoaded(mdl)
     load_system(mdl);
+end
+end
+
+function tf = uses_noise_lookup(mdl)
+% models without a root Inport take the noise from blk_noise_lookup(k, NZ)
+try
+    tf = isempty(find_system(mdl, 'SearchDepth', 1, 'BlockType', 'Inport'));
+catch
+    tf = false;
 end
 end
 

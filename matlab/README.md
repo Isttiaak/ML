@@ -214,16 +214,19 @@ This writes `CP` (1×32), `X0` (8×1), `LP`, `VP` (1×7), `PP` (1×10), `XP0` = 
 
 Use a stop time of `(N-1)*Ts`, not 0.1. A run to 0.1 s logs 2001 samples, but Python stores 2000.
 
+**Save the model now (Ctrl+S).** The Step 6 variables and these settings live in `boost_avg.slx`. `parsim` workers and later MATLAB sessions load the saved file, not the copy in memory.
+
 **Step 8. Run and check.**
 - Ctrl+D should give no errors. Then Run.
 - `out.ylog` is 2000×6 with columns [Vo iL d IL_ref R Vin]. `out.ymeas` may come back as 4×1×2000; `squeeze` it.
-- Then run `check_simulink_models`. It compares:
-  - all 5 controllers against `sim_boost` and the Python traces;
-  - two runs under Fast Restart, to prove the states reset;
-  - a batch with measured feed-forward, delay, a 10-bit ADC and noise.
+- Then run `check_simulink_models`. Its rows are:
+  - (a) all 5 controllers against `sim_boost`; (a2) other scenarios in one Fast Restart batch; (b) the Python traces;
+  - (c) the same run twice under Fast Restart, to prove the states reset;
+  - (d) a batch with measured feed-forward, delay, a 10-bit ADC and noise;
+  - (e) `boost_cycle` against `sim_boost(..., 'plant','switched')`. It builds `boost_cycle` if it's missing; skip it with `check_simulink_models(struct('cycle',false))`.
 - Expect bit-exact results for `boost_avg`. Compiled C can differ in the last digit for SMC's `tanh`, and the tolerance is 1e-9.
 
-If check (d), the noise one, fails while (a) passes: Simulink isn't reading the external input at exactly `k*Ts`. Replace the `noise` Inport with a MATLAB Function `n = blk_noise_lookup(k, NZ)`, fed by the same `k` signal, with `NZ` as a Parameter.
+If (d), the noise check, fails while (a) passes, Simulink isn't reading the external input at exactly `k*Ts`. Replace the `noise` Inport with a MATLAB Function `n = blk_noise_lookup(k, NZ)` fed by the same `k` signal, with `NZ` as Scope = Parameter. `setup_boost_workspace` and `sim_boost_simulink` notice that the model has no root Inport and write `NZ` (4×N) per run. NZ's size follows N, so keep `T_end` equal within one Fast Restart batch.
 
 **Pressing Run gives noise-free runs.** The root Inport outputs zeros when no external input is set. Noise reaches the model through `sim_boost_simulink`, which calls `setExternalInput` with exactly the same random draws as `sim_boost`.
 
@@ -240,6 +243,8 @@ That works, but to reproduce the Python laws you must change several defaults:
 | Derivative filter method (PID) | **Backward Euler, N = 1/Tf** | Forward Euler, N = 100 |
 
 The filter is the trap. The Python `alpha*d_filt + (1-alpha)*(e-e_prev)/Ts` is the block's *Backward Euler* filter. The default Forward Euler filter is a different filter and goes unstable for `Tf < Ts/2`, which MOPSO can reach. Clamping anti-windup doesn't match either.
+
+I checked this numerically by running the block's documented update equations in closed loop. With the settings in the table, the result equals `sim_boost` to 3e-13 V. Switching only the filter method back to Forward Euler moves Vo by up to **5 V** with the notebook's baseline PID gains.
 
 ---
 
@@ -280,16 +285,20 @@ cfg = study_config('backend','simulink');             % objective evaluated in b
 
 **Simulink as the simulator.** It gives the same objective values (Stage 2 proved the model equals `sim_boost`), but it's slower for a model this small. Use the MATLAB backend for tuning and Simulink/Simscape to validate the final gains. If you do use it: `cfg.simcfg.use_parsim = true` needs the Parallel Computing Toolbox, and every swarm is a single `SimulationInput` batch under Fast Restart.
 
-**Cross-check with a toolbox optimiser** (for the reviewer who asks why you wrote your own MOPSO). Search in log10 space where the study does:
+**Cross-check with a toolbox optimiser** (for the reviewer who asks why you wrote your own MOPSO). Use the *same* objectives as Stage 3, i.e. `res.cfg`, and search in log10 space where the study does:
 ```matlab
-cfg = study_config();  S = drv_search_space('cascade_pi', cfg);  P = cfg.P;
+cfg = res.cfg;  S = drv_search_space('cascade_pi', cfg);  P = cfg.P;   % same (worst-case) objectives as Stage 3
 toU = @(Z) S.log_scale.*10.^Z + ~S.log_scale.*Z;            % search space -> gains
 lb = S.lb; ub = S.ub; lb(S.log_scale) = log10(lb(S.log_scale)); ub(S.log_scale) = log10(ub(S.log_scale));
 fun = @(Z) objective_boost(toU(Z), 'cascade_pi', P, cfg);
-opts = optimoptions('paretosearch','UseVectorized',true,'MaxFunctionEvaluations',3000,'ParetoSetSize',60);
+opts = optimoptions('paretosearch','UseVectorized',true,'MaxFunctionEvaluations',3000,'ParetoSetSize',60);  % = 5 seeds x 600
 [zPS, fPS] = paretosearch(fun, numel(lb), [],[],[],[], lb, ub, [], opts);
+gPS  = toU(zPS);                                   % gains, columns as in S.names
+nrm  = res.ctrl.cascade_pi.norm;                   % the normalisation of the MOPSO fronts
+hvPS = hypervolume_mc((fPS - nrm.ideal)./nrm.span, nrm.ref, cfg.hv.samples, cfg.hv.seed);
+hvMO = res.ctrl.cascade_pi.merged.hv;              % MOPSO, same normalisation
 ```
-Use `UseVectorized`, not `UseParallel`; MathWorks advises against the solvers' internal parfor with Simulink. Then compare `hypervolume_mc` on the same normalisation as `res.ctrl.cascade_pi.norm`.
+Use `UseVectorized`, not `UseParallel`; MathWorks advises against the solvers' internal parfor with Simulink. Compare `hvPS` with `hvMO` (higher is better). Taking objectives from a fresh `study_config()` instead would compare different problems: nominal against worst case.
 
 ---
 
@@ -305,10 +314,17 @@ For each period it also returns min, max and average, which gives you the true s
 
 ```matlab
 build_boost_models('cycle');                                  % boost_cycle.slx
-o = struct('plant','switched','pwm','center','ff_mode','measured','delay',1);
-out = sim_boost('cascade_pi', g, P, o);                       % script version
+P  = boost_params();
+load('mopso_wc.mat', 'res');                                  % Stage 3 result
+gt = res.gains_table.cascade_pi;                              % fields gains, KPV, KIV
+g  = gt.gains;
+% the notebook design instead:  g = [0.0530583 1.0]; gt.KPV = 0.15; gt.KIV = 12;
+o = struct('plant','switched','pwm','center','ff_mode','measured','delay',1, ...
+           'KPV',gt.KPV,'KIV',gt.KIV);                        % keep the tuned outer loop!
+out  = sim_boost('cascade_pi', g, P, o);                      % script version
 outs = sim_boost_simulink('cascade_pi', g, P, o);             % Simulink version, same numbers to ~1e-12
 ```
+Always pass the tuned `KPV`/`KIV` along with the gains. Stage 3 tunes the outer loop too; leave them out and you silently simulate the notebook's 0.15/12, which here changed Vo by almost 3 V.
 
 By hand, `boost_cycle` is `boost_avg` with five changes:
 1. `xp` has IC `XP0 = [iL0; Vo0; Vo0]`, with states [iL; vC; Vout].
@@ -377,11 +393,12 @@ Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON p
 - Controller `d` → **Unit Delay (IC `D_ss` = 0.5, sample time Ts)** → PWM duty input.
   - This is the DSP's one-sample latency.
   - It also breaks the algebraic loop that ESR would otherwise create (sensor → controller → gate → sensor in the same instant).
-  - Since this block now provides the delay, write `CP` with delay 0:
+  - Since this block now provides the delay, write `CP` with delay 0 (`g`, `gt`, `P` as in Stage 4a):
     ```matlab
-    setup_boost_workspace('boost_simscape','cascade_pi',g,P,struct('ff_mode','measured','delay',0));
+    setup_boost_workspace('boost_simscape','cascade_pi',g,P, ...
+        struct('ff_mode','measured','delay',0,'KPV',gt.KPV,'KIV',gt.KIV));
     ```
-  - Compare against `sim_boost(..., 'plant','switched','pwm','center','delay',1)`, which has the same total delay.
+  - Compare against `sim_boost('cascade_pi', g, P, o)` with `o` from Stage 4a (switched, centre PWM, delay 1, measured feed-forward, same KPV/KIV). It has the same total delay and the same feed-forward.
 - **FCS-MPC**:
   - bypass the PWM. Use controller `d` (0/1) → Unit Delay (IC 0) → Simulink-PS → G, with a Manual Switch or Variant Subsystem to choose between the paths;
   - it has no delay compensation, so a 1-sample delay hurts it. Its prediction should be extended to k+2 if you keep the delay.
@@ -406,19 +423,26 @@ Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON p
 
 ### Step 6: validate, in this order
 
-1. **Open loop against the exact plant.** Save a copy of the power stage with the duty coming from root Inport 1 (`boost_ss_openloop.slx`), R and Vin as constants, and iL and Vo logged as timeseries `iL_sim` and `Vo_sim`. Then:
+1. **Open loop against the exact plant.** Save a copy of the power stage as `boost_ss_openloop.slx`:
+   - the duty comes from root Inport 1, with the Inport's **Sample time = Ts** (5e-5), so each period's duty is held;
+   - R and Vin are constants;
+   - iL and Vo are logged as timeseries `iL_sim` and `Vo_sim`.
+
+   Then:
    ```matlab
    Pp = boost_params(); Pp.pwm = 'center';   % add rL/rC/Ron/VF if your blocks have them
-   res = simscape_compare_openloop('boost_ss_openloop', 0.5*ones(400,1), ...
+   cmp = simscape_compare_openloop('boost_ss_openloop', 0.5*ones(400,1), ...
          struct('P',Pp,'pwm','center','R',20,'Vin',24,'iL0',0,'vC0',24));
    ```
-   This compares every period (boundary values, min, max, average) with `plant_switched_step`. Expect errors around 1e-3 relative; tolerances are 0.05 A / 0.05 V.
-2. **Ripple against theory.** At d = 0.5, 20 Ω, ideal parts, use `ripple_from_waveform(t, y, 20e3, [0.045 0.050])`:
+   (Call the result `cmp`, not `res`: `res` holds your Stage 3 fronts.) This compares every period (boundary values, min, max, average) with `plant_switched_step`. Expect errors around 1e-3 relative; tolerances are 0.05 A / 0.05 V.
+2. **Ripple against theory.** At d = 0.5, 20 Ω, ideal parts:
+   - **start the open-loop model in steady state**: Initial Targets inductor current 4.8 A (9.6 A at 10 Ω), capacitor voltage 48 V. Run 20 ms and use `ripple_from_waveform(t, y, 20e3, [0.019 0.020])`;
+   - from the 0 A / 24 V start the LC start-up transient takes about 0.2 s to die out; then run 0.2 s and use `[0.195 0.200]`. Measured any earlier, the start-up oscillation inflates the peak-to-peak (2.1 A instead of 1.2 A at 45–50 ms);
    - expected: ΔiL = 1.20 A peak-to-peak and ΔVo = 0.128 V (0.255 V at 10 Ω);
    - always measure on the raw solver-step log, never on the ZOH output (sampling at exactly fs aliases the ripple to a constant);
    - the function uses a whole number of PWM periods and warns when a period has fewer than 20 points.
-3. **DCM.** At R = 500 Ω, d = 0.5, Vout should be about 73.19 V, with each period idle for 12.80 µs.
-4. **Closed loop.** Compare the ZOH outputs with `sim_boost(ctrl, g, P, struct('plant','switched','pwm','center','delay',1,'ff_mode','measured'))`. Expect close, not identical: the PWM edges are quantised to the solver step.
+3. **DCM.** Set the load to 500 Ω and the capacitor Initial Target to 73.19 V, or run at least 0.6 s from 24 V (RC = 0.235 s). At d = 0.5, Vout should then be about 73.19 V, with each period idle for 12.80 µs. After only 20 ms from 24 V you'd see about 72.1 V and 12.5 µs, which is not an error.
+4. **Closed loop.** Compare the ZOH outputs with `sim_boost('cascade_pi', g, P, o)`, with `o` from Stage 4a. Expect close, not identical: the PWM edges are quantised to the solver step.
 
 ### Step 7: sweeps on Simscape
 
@@ -431,6 +455,7 @@ Why centre-aligned: the sample at t = k·Ts then lands in the middle of the ON p
 ## 8. Stage 5: robustness battery, LaTeX table, figures
 
 ```matlab
+load('mopso_wc.mat', 'res');                    % Stage 3 result (needed after a restart)
 cfg = study_config('scenario_set','worst_case');
 cfg.rob.controllers = {'fcsmpc','cascade_pi','cascade_pid','smc'};   % single-loop PI left out
 rob = run_robustness(res, cfg);                 % uses res.gains_table from Stage 3
@@ -443,7 +468,7 @@ The battery runs on the switched plant (centre PWM, measured feed-forward, the t
 | Scenario | What |
 |---|---|
 | nominal | 20 → 10 Ω at 50 ms |
-| load_m55 | 20 → 8.9 Ω (−55 %; replaces the impossible −75 %; feasibility needs R ≥ Vref²/(Vin·IL_MAX) = 8 Ω) |
+| load_m55 | 20 → 8.9 Ω (−55.5 %; replaces the impossible −75 %; feasibility needs R ≥ Vref²/(Vin·IL_MAX) = 8 Ω) |
 | load_release | 10 → 20 Ω |
 | load_ramp | 20 → 10 Ω over 10 ms |
 | vin_p20 / vin_m20 | Vin ±20 % at 60 ms, 20 Ω |
@@ -478,10 +503,10 @@ Single-loop PI is excluded by default.
 | 7 | FCS-MPC moves iL 2.4 A per sample | switching-frequency objective; stated limitation; raise its rate if you keep it |
 | 8–9 | Inconsistent scope; arbitrary "before" gains | one controller list everywhere; report `study_config('legacy')` as "before" and say how the baselines were chosen |
 | 10 | Robustness metrics taken from start-up windows | every scenario is measured after its own event |
-| 11 | −75 % load step impossible | −55 % (8.9 Ω) |
+| 11 | −75 % load step impossible | −55.5 % (8.9 Ω) |
 | 12 | Single noise seed | 30-seed Monte Carlo |
 | 13 | No L/C/ESR/DCR/delay tests | plant mismatch, parasitics, extra delay |
-| 14 | Compromise point = distance to origin | ideal-point compromise; the old rule is still available as `'origin_maxnorm'` |
+| 14 | Compromise point = distance to origin | ideal-point compromise; the old rule: `study_config(..., 'mopso.compromise_method','origin_maxnorm')` |
 | 16 | LaTeX `%` unescaped | escaped, and a test checks it |
 | MOPSO | raw-unit crowding, duplicate archive entries, two RNG streams, crash on an all-duplicate archive | fixed; tested on ZDT1 and DTLZ2 |
 

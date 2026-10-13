@@ -93,6 +93,9 @@ if strcmp(backend, 'simulink')
     for i = 1:numel(names)
         [fld, found] = locate_model(names{i}, folder);
         if rebuild || ~found
+            if rebuild && bdIsLoaded(names{i})
+                close_system(names{i}, 0);   % the rebuild replaces it; drop unsaved edits
+            end
             try
                 build_boost_models(strrep(names{i}, 'boost_', ''), fld);
                 rows = add(rows, sprintf('build %s.slx in %s', names{i}, fld), true, '');
@@ -311,7 +314,8 @@ else
         fprintf(['  (d): the noise does not reach the controller as in sim_boost: root Inport ''noise''\n' ...
             '    (width 4, sample time Ts) must be port 2 of Controller; the Simulink time of\n' ...
             '    sample k must be exactly k*Ts.  Exact alternative: replace the Inport by a MATLAB\n' ...
-            '    Function n = blk_noise_lookup(k, NZ) fed by the counter k (NZ = 4 x N parameter).\n']);
+            '    Function n = blk_noise_lookup(k, NZ) fed by the counter k (NZ = Parameter);\n' ...
+            '    setup_boost_workspace and sim_boost_simulink then write NZ per run.\n']);
     end
     if any_fail(rows, '(e')
         fprintf('  (e): check the Plant block of boost_cycle (blk_plant_switched, PP from make_plant_params).\n');

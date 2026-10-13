@@ -44,10 +44,16 @@ function outs = sim_boost_simulink(ctrl, G, P, opts, simcfg)
 %   exactly like sim_boost (rng(seed,'twister'), randn(n_active, N), caller
 %   RNG restored, channel order Vo iL io Vin), so a run equals sim_boost with
 %   the same arguments (check_simulink_models verifies this).
-%   With workspace 'model' the variables of the first run are also written
-%   to the model workspace (they must exist before setVariable), so the
-%   model shows as modified afterwards; rebuild or re-run
-%   setup_boost_workspace to restore the defaults.
+%   With workspace 'model' the variables must already exist in the model
+%   workspace (setVariable only overrides them); they are written from the
+%   first run only when one is missing or has the wrong size, so a saved
+%   model normally stays unmodified.  Before parsim a modified model is
+%   saved, because the workers load the .slx file.
+%   Noise source: a model with the root Inport 'noise' gets the noise as
+%   external input; a model without root Inport (Inport replaced by a
+%   MATLAB Function n = blk_noise_lookup(k, NZ)) gets NZ (4 x N) per run with
+%   setVariable.  NZ's size follows N, so all runs of one Fast Restart
+%   batch must then have the same T_end.
 %   Fast Restart needs every run to use the same model, Ts and parameter
 %   sizes (always true here); delay <= 3 and Pplant.Ts == P.Ts are required
 %   by the block code.
@@ -199,13 +205,37 @@ else
         error('sim_boost_simulink:workspace', 'simcfg.workspace must be ''model'' or ''base''');
     end
     i1 = idx(1);
-    if strcmp(ws, 'model')
-        % the variables must exist in the model workspace before setVariable
-        setup_boost_workspace(mdl, cl{i1}, gl{i1}, P, ol{i1});
-    end
+    lookup = uses_noise_lookup(mdl);
     vars = {'CP', 'X0', 'LP', 'VP', 'PP', 'XP0'};
-    if strcmp(ws, 'base')
+    if lookup
+        vars{end + 1} = 'NZ';
+    end
+    if strcmp(ws, 'model')
+        % setVariable(..., 'Workspace', mdl) only overrides variables that
+        % already exist there.  Write the defaults only when something is
+        % missing (or Ts / sizes differ), so the model normally stays clean:
+        % parsim workers load the SAVED .slx, not the copy in memory.
+        if needs_refill(mdl, [vars, {'Ts', 'N'}], S{i1})
+            setup_boost_workspace(mdl, cl{i1}, gl{i1}, P, ol{i1});
+        end
+    else
         vars = [vars, {'Ts', 'N'}];
+        % model-workspace variables shadow the global ones silently
+        clash = {};
+        try
+            mws = get_param(mdl, 'ModelWorkspace');
+            for v = 1:numel(vars)
+                if hasVariable(mws, vars{v})
+                    clash{end + 1} = vars{v}; %#ok<AGROW>
+                end
+            end
+        catch
+        end
+        if ~isempty(clash)
+            error('sim_boost_simulink:workspace', ['the model workspace of %s defines %s, which ' ...
+                'would silently override the per-run values; use simcfg.workspace = ''model'''], ...
+                mdl, strjoin(clash, ' '));
+        end
     end
     m = numel(idx);
     for j = m:-1:1
@@ -219,7 +249,10 @@ else
             end
         end
         inj = inj.setModelParameter('StopTime', s.StopTime);
-        inj = inj.setExternalInput(timeseries(s.noise.', s.t));
+        if ~lookup
+            % root Inport 'noise' (zeros when no external input is given)
+            inj = inj.setExternalInput(timeseries(s.noise.', s.t));
+        end
         in(j) = inj; %#ok<AGROW>
     end
     if getcfg(simcfg, 'fast_restart', true)
@@ -227,12 +260,23 @@ else
     else
         fr = 'off';
     end
-    if getcfg(simcfg, 'use_parsim', false)
-        [files, dirs] = block_files(mdl);
-        so = parsim(in, 'UseFastRestart', fr, 'TransferBaseWorkspaceVariables', 'off', ...
-            'AttachedFiles', files, 'SetupFcn', @() addpath(dirs{:}));
-    else
-        so = sim(in, 'UseFastRestart', fr, 'ShowProgress', 'off', 'StopOnError', 'off');
+    try
+        if getcfg(simcfg, 'use_parsim', false)
+            if strcmp(get_param(mdl, 'Dirty'), 'on')
+                save_system(mdl);   % workers load the saved .slx, not the in-memory model
+            end
+            [files, dirs] = block_files(mdl);
+            so = parsim(in, 'UseFastRestart', fr, 'TransferBaseWorkspaceVariables', 'off', ...
+                'AttachedFiles', files, 'SetupFcn', @() addpath(dirs{:}));
+        else
+            so = sim(in, 'UseFastRestart', fr, 'ShowProgress', 'off', 'StopOnError', 'off');
+        end
+    catch err
+        % a scalar SimulationInput does not capture errors: report per run
+        for j = 1:m
+            outs(idx(j)).error = ['sim: ' err.message];
+        end
+        return;
     end
     for j = 1:m
         i = idx(j);
@@ -402,6 +446,32 @@ if numel(c) == 1
     c = repmat(c, 1, n);
 elseif numel(c) ~= n
     error('sim_boost_simulink:runs', '%s has %d entries, expected 1 or %d', what, numel(c), n);
+end
+end
+
+function tf = uses_noise_lookup(mdl)
+% models without a root Inport take the noise from blk_noise_lookup(k, NZ)
+try
+    tf = isempty(find_system(mdl, 'SearchDepth', 1, 'BlockType', 'Inport'));
+catch
+    tf = false;
+end
+end
+
+function tf = needs_refill(mdl, vars, s)
+% true if a model-workspace variable is missing or has the wrong size / Ts
+tf = true;
+try
+    mws = get_param(mdl, 'ModelWorkspace');
+    for v = 1:numel(vars)
+        if ~hasVariable(mws, vars{v}) || ...
+                ~isequal(size(getVariable(mws, vars{v})), size(s.(vars{v})))
+            return;
+        end
+    end
+    tf = ~isequal(getVariable(mws, 'Ts'), s.Ts);
+catch
+    tf = true;   % API not available: fall back to writing the defaults
 end
 end
 
