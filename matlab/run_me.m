@@ -74,8 +74,10 @@ if size(env, 1) ~= size(yc, 1)
     env = env.';
 end
 k = round(0.045 / P.Ts):round(0.050 / P.Ts) - 1;
-fprintf('boost_cycle: switching ripple 45-50 ms: Vo %.3f V pk-pk, iL %.3f A pk-pk\n', ...
-    max(env(k, 2)) - min(env(k, 1)), max(env(k, 4)) - min(env(k, 3)));
+% switching ripple = max - min inside each 50 us period, averaged over 45-50 ms
+% (max - min over the whole window would add the slow drift of Vo)
+fprintf('boost_cycle: switching ripple 45-50 ms: Vo %.3f V pk-pk, iL %.3f A pk-pk (per period)\n', ...
+    mean(env(k, 2) - env(k, 1)), mean(env(k, 4) - env(k, 3)));
 
 % 4. plots
 figure('Name', 'boost converter');
@@ -108,8 +110,14 @@ if run_simscape && isfile(fullfile(here, 'boost_simscape.slx')) && ~isempty(ver(
         fine = fine.';
     end
     tf = (0:size(fine, 1) - 1)' * P.Ts / 500;
-    fprintf('boost_simscape: Vo at 45-50 ms %.3f V mean, ripple %.3f V pk-pk\n', ...
-        mean(ys(k, 1)), ripple_from_waveform(tf, fine(:, 2), P.fs, [0.045 0.050]));
+    nper = round(P.Ts / (tf(2) - tf(1)));      % fine samples per 50 us period
+    rip = zeros(numel(k), 1);                  % per-period max - min of the 0.1 us waveform
+    for j = 1:numel(k)
+        seg = fine((k(j) - 1) * nper + (1:nper + 1), 2);
+        rip(j) = max(seg) - min(seg);
+    end
+    fprintf('boost_simscape: Vo at 45-50 ms %.3f V mean, switching ripple %.3f V pk-pk (per period)\n', ...
+        mean(ys(k, 1)), mean(rip));
     figure('Name', 'boost_simscape');
     plot(tf * 1e3, fine(:, 2), t * 1e3, ys(:, 1), '.');
     xlabel('time (ms)');
