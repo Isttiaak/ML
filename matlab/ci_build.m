@@ -168,6 +168,16 @@ names = {'foundation.electrical.sources.controlled_voltage', 'foundation.electri
     'foundation.electrical.sensors.voltage', 'foundation.electrical.elements.variable_resistor', ...
     'foundation.electrical.elements.diode', 'foundation.electrical.elements.inductor', ...
     'foundation.electrical.elements.capacitor', 'foundation.electrical.elements.reference'};
+blks = {'fl_lib/Electrical/Electrical Elements/Diode', 'ee_lib/Semiconductors & Converters/Diode', ...
+    'ee_lib/Semiconductors & Converters/Ideal Semiconductor Switch'};
+for i = 1:numel(blks)
+    try
+        load_system(strtok(blks{i}, '/'));
+        fprintf('  %s: ComponentPath = %s\n', blks{i}, get_param(blks{i}, 'ComponentPath'));
+    catch err
+        fprintf('  %s: %s\n', blks{i}, err.message);
+    end
+end
 for i = 1:numel(names)
     p = which(names{i});
     fprintf('  %s -> %s\n', names{i}, p);

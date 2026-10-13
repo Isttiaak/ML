@@ -7,7 +7,8 @@ function file = build_boost_simscape(folder, bopts)
 %     bopts.open    open the model (false)
 %   Needs Simscape (Foundation library).  The power stage is the composite
 %   component boost_stage.ssc (inductor, variable-resistor switch, diode,
-%   capacitor, load, sensors), used through a Simscape Component block.
+%   capacitor, load, sensors; the diode is pwl_diode.ssc with the Foundation
+%   Diode equations), used through a Simscape Component block.
 %
 %   Signal flow (controller blocks run at Ts, the circuit at the local
 %   solver step h = Ts/500):
@@ -277,6 +278,8 @@ for i = 1:numel(names)
         return;
     catch err
         msg = err.message;
+        fprintf('  set_param(%s) failed: %s\n', names{i}, err.message);
+        print_causes(err, '    ');
     end
 end
 error('build_boost_simscape:component', 'could not point the Simscape Component block to boost_stage (%s)', msg);

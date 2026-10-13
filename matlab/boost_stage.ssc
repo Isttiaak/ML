@@ -1,5 +1,5 @@
 component boost_stage
-% Boost power stage (Simscape Foundation blocks)
+% Boost power stage (Simscape Foundation blocks + pwl_diode.ssc)
 % Inputs:  Rsw switch resistance (Ron when ON, Roff when OFF),
 %          Rload load resistance, Vin input voltage.
 % Outputs: iL inductor current, vo output voltage at the load,
@@ -40,7 +40,7 @@ component boost_stage
         ind     = foundation.electrical.elements.inductor(l = L, r = rL, ...
                       i_L = {value = iL0, priority = priority.high});
         sw      = foundation.electrical.elements.variable_resistor;
-        dio     = foundation.electrical.elements.diode(Vf = Vf, Ron = Rd, Goff = Gd);
+        dio     = pwl_diode(Vf = Vf, Ron = Rd, Goff = Gd);   % Foundation Diode equations
         cap     = foundation.electrical.elements.capacitor(c = C, r = rC, ...
                       vc = {value = vC0, priority = priority.high});
         sens_io = foundation.electrical.sensors.current;
